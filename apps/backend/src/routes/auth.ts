@@ -1,11 +1,21 @@
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
-import { setCookie, deleteCookie } from 'hono/cookie';
-import { sign, verify } from 'hono/jwt';
+import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
+import { verify } from 'hono/jwt';
 import { loginSchema, refreshCookieSchema } from '@aura/shared';
+import {
+  getJwtSecret,
+  hashPassword,
+  generateAccessToken,
+  generateRefreshToken,
+  getSystemConfigs,
+  revokeSession,
+  isSessionRevoked
+} from '../utils/auth-helpers';
 
 type Bindings = {
-  DB?: any; // D1Database is not globally typed in all environments, so we use any to be safe
+  DB?: any;
+  REVOCATION_KV?: any;
   JWT_SECRET?: string;
 };
 
@@ -13,59 +23,14 @@ const auth = new Hono<{ Bindings: Bindings }>();
 
 // Fallback in-memory store for environments without Cloudflare D1 configured (e.g. dev/testing)
 interface TokenSession {
-  familyId: string;
+  id: string;
   userCpf: string;
-  isUsed: boolean;
+  currentTokenJti: string;
+  lastTokenJti: string | null;
+  penultimateTokenJti: string | null;
   expiresAt: number;
 }
 const localTokenStore = new Map<string, TokenSession>();
-
-const getJwtSecret = (c: any) => c.env.JWT_SECRET || 'super-secret-development-key';
-
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits", "deriveKey"]
-  );
-  const key = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: enc.encode(salt),
-      iterations: 100000,
-      hash: "SHA-256"
-    },
-    keyMaterial,
-    { name: "HMAC", hash: "SHA-256", length: 256 },
-    true,
-    ["sign"]
-  );
-  const exported = await crypto.subtle.exportKey("raw", key) as ArrayBuffer;
-  const hashArray = Array.from(new Uint8Array(exported));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function generateAccessToken(cpf: string, secret: string): Promise<string> {
-  const payload = {
-    sub: cpf,
-    role: 'MEDICO',
-    exp: Math.floor(Date.now() / 1000) + 15 * 60, // 15 minutes
-  };
-  return await sign(payload, secret, 'HS256');
-}
-
-async function generateRefreshToken(cpf: string, jti: string, familyId: string, secret: string): Promise<string> {
-  const payload = {
-    sub: cpf,
-    jti,
-    familyId,
-    exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 days
-  };
-  return await sign(payload, secret, 'HS256');
-}
 
 // Rota de Login Blindada
 auth.post('/login', validator('json', (value, c) => {
@@ -100,53 +65,98 @@ auth.post('/login', validator('json', (value, c) => {
     }
   }
 
-  // Fallback para desenvolvimento local sem DB/migration executada
   if (!user || !storedCreds) {
-    if (!c.env.DB && username === '12345678909' && password === 'senha123') {
-      user = { id: 'd9b43c68-8be0-449e-8c3a-864a66a6a2a2', cpf: username, name: 'Dr. Gregory House (Mock)', role: 'MEDICO' };
-    } else {
-      return c.json({ error: 'Credenciais inválidas' }, 401);
+    return c.json({ error: 'Credenciais inválidas' }, 401);
+  }
+
+  // Validar senha
+  const computedHash = await hashPassword(password, storedCreds.salt);
+  if (computedHash !== storedCreds.password_hash) {
+    return c.json({ error: 'Credenciais inválidas' }, 401);
+  }
+
+  // Obter configurações do sistema
+  const configs = await getSystemConfigs(c);
+  const secret = getJwtSecret(c);
+  const sid = crypto.randomUUID();
+  const jti = crypto.randomUUID();
+  const refreshExpiresAt = Math.floor(Date.now() / 1000) + configs.cookieTtlSeconds;
+
+  // Lógica de Sessão Única (Single Session) avaliada pelo Worker
+  if (configs.singleSessionEnabled) {
+    if (c.env.DB) {
+      try {
+        // Encontrar sessões anteriores
+        const oldSessions: any = await c.env.DB.prepare(
+          'SELECT id FROM sessions WHERE user_cpf = ?'
+        )
+        .bind(username)
+        .all();
+
+        if (oldSessions && oldSessions.results) {
+          for (const session of oldSessions.results) {
+            // Revogar no KV pelo tempo de vida do JWT (para invalidar Access Tokens em trânsito)
+            await revokeSession(c, session.id, configs.jwtTtlSeconds);
+            
+            // Deletar sessão anterior do banco
+            await c.env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(session.id).run();
+          }
+        }
+      } catch (dbError) {
+        console.warn("Falha ao invalidar sessões anteriores no D1:", dbError);
+      }
     }
-  } else {
-    // Validar senha
-    const computedHash = await hashPassword(password, storedCreds.salt);
-    if (computedHash !== storedCreds.password_hash) {
-      return c.json({ error: 'Credenciais inválidas' }, 401);
+
+    // Invalidação no store local (fallback)
+    for (const [key, val] of localTokenStore.entries()) {
+      if (val.userCpf === username) {
+        await revokeSession(c, val.id, configs.jwtTtlSeconds);
+        localTokenStore.delete(key);
+      }
     }
   }
 
-  const secret = getJwtSecret(c);
-  const jti = crypto.randomUUID();
-  const familyId = crypto.randomUUID();
-  const refreshExpiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
-
-  // Persist the refresh token in D1 (or fallback to local memory)
+  // Persistir nova sessão
   if (c.env.DB) {
     try {
       await c.env.DB.prepare(
-        'INSERT INTO refresh_tokens (jti, family_id, user_cpf, is_used, expires_at) VALUES (?, ?, ?, 0, ?)'
+        'INSERT INTO sessions (id, user_cpf, current_token_jti, expires_at) VALUES (?, ?, ?, ?)'
       )
-      .bind(jti, familyId, username, refreshExpiresAt)
+      .bind(sid, username, jti, refreshExpiresAt)
       .run();
     } catch (dbError) {
-      console.warn("Falha ao salvar token no banco D1, usando fallback em memória:", dbError);
-      localTokenStore.set(jti, { familyId, userCpf: username, isUsed: false, expiresAt: refreshExpiresAt });
+      console.warn("Falha ao salvar sessão no banco D1, usando fallback em memória:", dbError);
+      localTokenStore.set(sid, {
+        id: sid,
+        userCpf: username,
+        currentTokenJti: jti,
+        lastTokenJti: null,
+        penultimateTokenJti: null,
+        expiresAt: refreshExpiresAt
+      });
     }
   } else {
-    localTokenStore.set(jti, { familyId, userCpf: username, isUsed: false, expiresAt: refreshExpiresAt });
+    localTokenStore.set(sid, {
+      id: sid,
+      userCpf: username,
+      currentTokenJti: jti,
+      lastTokenJti: null,
+      penultimateTokenJti: null,
+      expiresAt: refreshExpiresAt
+    });
   }
 
-  // Generate both tokens
-  const accessToken = await generateAccessToken(username, secret);
-  const refreshToken = await generateRefreshToken(username, jti, familyId, secret);
+  // Gerar tokens
+  const accessToken = await generateAccessToken(username, secret, sid, configs.jwtTtlSeconds);
+  const refreshToken = await generateRefreshToken(username, jti, sid, secret, configs.cookieTtlSeconds);
 
-  // Set the HTTP-Only Refresh Token cookie
+  // Set HTTP-Only Refresh Token Cookie
   setCookie(c, 'refreshToken', refreshToken, {
     httpOnly: true,
     secure: true,
     sameSite: 'Strict',
     path: '/',
-    maxAge: 7 * 24 * 60 * 60, // 7 days
+    maxAge: configs.cookieTtlSeconds,
   });
 
   return c.json({
@@ -174,107 +184,106 @@ auth.post('/refresh', validator('cookie', (value, c) => {
     return c.json({ error: 'Token de refresh inválido ou expirado' }, 401);
   }
 
-  const { sub: username, jti, familyId } = payload;
-  if (!username || !jti || !familyId) {
+  const { sub: username, jti, sid } = payload;
+  if (!username || !jti || !sid) {
     return c.json({ error: 'Payload de token inválido' }, 401);
   }
 
-  // Query database/fallback to check token usage status
+  // Verificar se a sessão foi revogada via KV
+  const isRevoked = await isSessionRevoked(c, sid);
+  if (isRevoked) {
+    return c.json({ error: 'Sessão revogada ou inválida' }, 401);
+  }
+
+  // Obter configurações do sistema
+  const configs = await getSystemConfigs(c);
   let storedRecord: TokenSession | null = null;
 
   if (c.env.DB) {
     try {
       const dbRecord: any = await c.env.DB.prepare(
-        'SELECT family_id, user_cpf, is_used, expires_at FROM refresh_tokens WHERE jti = ?'
+        'SELECT id, user_cpf, current_token_jti, last_token_jti, penultimate_token_jti, expires_at FROM sessions WHERE id = ?'
       )
-      .bind(jti)
+      .bind(sid)
       .first();
 
       if (dbRecord) {
         storedRecord = {
-          familyId: dbRecord.family_id,
+          id: dbRecord.id,
           userCpf: dbRecord.user_cpf,
-          isUsed: dbRecord.is_used === 1,
+          currentTokenJti: dbRecord.current_token_jti,
+          lastTokenJti: dbRecord.last_token_jti,
+          penultimateTokenJti: dbRecord.penultimate_token_jti,
           expiresAt: dbRecord.expires_at,
         };
       }
     } catch (dbError) {
-      console.warn("Falha ao buscar token no banco D1, consultando fallback em memória:", dbError);
+      console.warn("Falha ao buscar sessão no banco D1, consultando fallback em memória:", dbError);
     }
   }
 
   if (!storedRecord) {
-    const memRecord = localTokenStore.get(jti);
-    if (memRecord) {
-      storedRecord = memRecord;
-    }
+    storedRecord = localTokenStore.get(sid) || null;
   }
 
-  // If token is completely unknown
   if (!storedRecord) {
-    return c.json({ error: 'Token de refresh desconhecido ou inválido' }, 401);
+    return c.json({ error: 'Sessão não encontrada' }, 401);
   }
 
-  // REUSE DETECTION: If token has already been marked as used, revoke entire family!
-  if (storedRecord.isUsed) {
+  // DETECÇÃO DE REUSO: se o jti for igual a um dos dois últimos utilizados, revoga tudo!
+  if (jti === storedRecord.lastTokenJti || jti === storedRecord.penultimateTokenJti) {
+    // Revogar sessão inteira
+    await revokeSession(c, sid, configs.jwtTtlSeconds);
+
     if (c.env.DB) {
       try {
-        await c.env.DB.prepare(
-          'UPDATE refresh_tokens SET is_used = 1 WHERE family_id = ?'
-        )
-        .bind(familyId)
-        .run();
+        await c.env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sid).run();
       } catch (dbError) {
-        console.warn("Falha ao revogar família no banco D1:", dbError);
+        console.warn("Falha ao deletar sessão do banco D1:", dbError);
       }
     }
+    localTokenStore.delete(sid);
 
-    // Revoke in-memory family
-    for (const [key, val] of localTokenStore.entries()) {
-      if (val.familyId === familyId) {
-        localTokenStore.set(key, { ...val, isUsed: true });
-      }
-    }
-
-    // Clean cookie and reject
     deleteCookie(c, 'refreshToken', { path: '/' });
     return c.json({ error: 'Tentativa de reuso de refresh token detectada. Acesso revogado por segurança.' }, 403);
   }
 
-  // Token is valid and unused: proceed with rotation
-  const newJti = crypto.randomUUID();
-  const refreshExpiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+  // Se o jti não for o ativo atual, é inválido
+  if (jti !== storedRecord.currentTokenJti) {
+    return c.json({ error: 'Refresh token inválido' }, 401);
+  }
 
-  // Mark old token as used and insert new one
+  // Token válido e atual: rotacionar em-place
+  const newJti = crypto.randomUUID();
+  const refreshExpiresAt = Math.floor(Date.now() / 1000) + configs.cookieTtlSeconds;
+
   if (c.env.DB) {
     try {
-      // D1 runs non-transactionally but in sequence
       await c.env.DB.prepare(
-        'UPDATE refresh_tokens SET is_used = 1 WHERE jti = ?'
+        'UPDATE sessions SET penultimate_token_jti = last_token_jti, last_token_jti = current_token_jti, current_token_jti = ?, expires_at = ? WHERE id = ?'
       )
-      .bind(jti)
-      .run();
-
-      await c.env.DB.prepare(
-        'INSERT INTO refresh_tokens (jti, family_id, user_cpf, is_used, expires_at) VALUES (?, ?, ?, 0, ?)'
-      )
-      .bind(newJti, familyId, username, refreshExpiresAt)
+      .bind(newJti, refreshExpiresAt, sid)
       .run();
     } catch (dbError) {
-      console.warn("Falha ao registrar rotação no banco D1:", dbError);
+      console.warn("Falha ao atualizar rotação de sessão no D1:", dbError);
     }
   }
 
-  // Update in-memory fallback
-  const oldMemRecord = localTokenStore.get(jti);
-  if (oldMemRecord) {
-    localTokenStore.set(jti, { ...oldMemRecord, isUsed: true });
+  // Atualizar store em memória local
+  const oldLocal = localTokenStore.get(sid);
+  if (oldLocal) {
+    localTokenStore.set(sid, {
+      ...oldLocal,
+      penultimateTokenJti: oldLocal.lastTokenJti,
+      lastTokenJti: oldLocal.currentTokenJti,
+      currentTokenJti: newJti,
+      expiresAt: refreshExpiresAt
+    });
   }
-  localTokenStore.set(newJti, { familyId, userCpf: username, isUsed: false, expiresAt: refreshExpiresAt });
 
-  // Generate new token pair
-  const newAccessToken = await generateAccessToken(username, secret);
-  const newRefreshToken = await generateRefreshToken(username, newJti, familyId, secret);
+  // Gerar novos tokens
+  const newAccessToken = await generateAccessToken(username, secret, sid, configs.jwtTtlSeconds);
+  const newRefreshToken = await generateRefreshToken(username, newJti, sid, secret, configs.cookieTtlSeconds);
 
   let userRole = 'MEDICO';
   let userName = '';
@@ -296,13 +305,13 @@ auth.post('/refresh', validator('cookie', (value, c) => {
     }
   }
 
-  // Set the new HTTP-Only Refresh Token cookie
+  // Set HTTP-Only Refresh Token Cookie
   setCookie(c, 'refreshToken', newRefreshToken, {
     httpOnly: true,
     secure: true,
     sameSite: 'Strict',
     path: '/',
-    maxAge: 7 * 24 * 60 * 60, // 7 days
+    maxAge: configs.cookieTtlSeconds,
   });
 
   return c.json({
@@ -310,6 +319,46 @@ auth.post('/refresh', validator('cookie', (value, c) => {
     accessToken: newAccessToken,
     user: { cpf: username, name: userName || 'Dr. Gregory House', role: userRole }
   });
+});
+
+// Rota de Logout / Invalidação Rápida
+auth.post('/logout', async (c) => {
+  const refreshTokenCookie = getCookie(c, 'refreshToken');
+  const configs = await getSystemConfigs(c);
+  const secret = getJwtSecret(c);
+
+  let sid: string | null = null;
+
+  if (refreshTokenCookie) {
+    try {
+      const payload: any = await verify(refreshTokenCookie, secret, 'HS256');
+      if (payload && payload.sid) {
+        sid = payload.sid;
+      }
+    } catch (e) {
+      // Ignora erro de expiração no logout
+    }
+  }
+
+  if (sid) {
+    // Revoga a sessão instantaneamente no KV
+    await revokeSession(c, sid, configs.jwtTtlSeconds);
+
+    // Deleta do D1
+    if (c.env.DB) {
+      try {
+        await c.env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sid).run();
+      } catch (dbError) {
+        console.warn("Falha ao remover sessão no D1 durante o logout:", dbError);
+      }
+    }
+    localTokenStore.delete(sid);
+  }
+
+  // Limpa o cookie
+  deleteCookie(c, 'refreshToken', { path: '/' });
+
+  return c.json({ message: 'Logoff efetuado com sucesso' });
 });
 
 export default auth;

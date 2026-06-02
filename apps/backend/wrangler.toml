@@ -7,3 +7,7 @@ binding = "DB"
 database_name = "aura-db"
 database_id = "local-aura-db-id"
 migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "REVOCATION_KV"
+id = "local-revocation-kv-id"
