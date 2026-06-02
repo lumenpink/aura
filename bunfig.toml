@@ -1,0 +1,6 @@
+# aura-health-os/bunfig.toml
+[install.workspaces]
+packages = [
+  "apps/*",
+  "packages/*"
+]
