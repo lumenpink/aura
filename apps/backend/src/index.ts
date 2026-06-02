@@ -1,23 +1,8 @@
-import { Hono } from "hono";
-import { validator } from "hono/validator";
-import { insertPatientSchema } from "@aura/shared";
+import { Hono } from 'hono';
+import auth from './routes/auth';
 
 const app = new Hono();
 
-const routes = app.post(
-  "/api/patients",
-  validator("json", (value, c) => {
-    const parsed = insertPatientSchema.safeParse(value);
-    if (!parsed.success) {
-      return c.json({ error: parsed.error.format() }, 400);
-    }
-    return parsed.data;
-  }),
-  (c) => {
-    const patientData = c.req.valid("json");
-    return c.json({ success: true, data: patientData });
-  }
-);
+app.route('/api/auth', auth);
 
-export type AppType = typeof routes;
 export default app;
