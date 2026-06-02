@@ -7,7 +7,11 @@
   ],
   "scripts": {
     "dev:backend": "bun --cwd apps/backend dev",
-    "dev:frontend": "bun --cwd apps/frontend dev"
+    "dev:frontend": "bun --cwd apps/frontend dev",
+    "test": "bun test",
+    "test:shared": "bun test test/shared",
+    "test:backend": "bun test test/backend",
+    "test:frontend": "bun test test/frontend"
   },
   "dependencies": {
     "autoprefixer": "^10.5.0",
