@@ -1,0 +1,9 @@
+name = "aura-backend"
+main = "src/index.ts"
+compatibility_date = "2026-06-02"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aura-db"
+database_id = "local-aura-db-id"
+migrations_dir = "migrations"

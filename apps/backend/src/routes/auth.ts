@@ -22,6 +22,32 @@ const localTokenStore = new Map<string, TokenSession>();
 
 const getJwtSecret = (c: any) => c.env.JWT_SECRET || 'super-secret-development-key';
 
+async function hashPassword(password: string, salt: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits", "deriveKey"]
+  );
+  const key = await crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: enc.encode(salt),
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    { name: "HMAC", hash: "SHA-256", length: 256 },
+    true,
+    ["sign"]
+  );
+  const exported = await crypto.subtle.exportKey("raw", key) as ArrayBuffer;
+  const hashArray = Array.from(new Uint8Array(exported));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function generateAccessToken(cpf: string, secret: string): Promise<string> {
   const payload = {
     sub: cpf,
@@ -51,8 +77,43 @@ auth.post('/login', validator('json', (value, c) => {
 }), async (c) => {
   const { username, password } = c.req.valid('json');
 
-  // Aqui, em breve, vamos consultar o seu D1 para verificar a senha:
-  // const user = await c.env.DB.prepare(...).bind(username).first();
+  let user: any = null;
+  let storedCreds: any = null;
+
+  if (c.env.DB) {
+    try {
+      user = await c.env.DB.prepare(
+        'SELECT id, cpf, name, phone, email, role FROM users WHERE cpf = ?'
+      )
+      .bind(username)
+      .first();
+
+      if (user) {
+        storedCreds = await c.env.DB.prepare(
+          'SELECT password_hash, salt FROM user_credentials WHERE user_id = ?'
+        )
+        .bind(user.id)
+        .first();
+      }
+    } catch (dbError) {
+      console.warn("Falha ao consultar banco D1 para login, usando fallback:", dbError);
+    }
+  }
+
+  // Fallback para desenvolvimento local sem DB/migration executada
+  if (!user || !storedCreds) {
+    if (!c.env.DB && username === '12345678909' && password === 'senha123') {
+      user = { id: 'd9b43c68-8be0-449e-8c3a-864a66a6a2a2', cpf: username, name: 'Dr. Gregory House (Mock)', role: 'MEDICO' };
+    } else {
+      return c.json({ error: 'Credenciais inválidas' }, 401);
+    }
+  } else {
+    // Validar senha
+    const computedHash = await hashPassword(password, storedCreds.salt);
+    if (computedHash !== storedCreds.password_hash) {
+      return c.json({ error: 'Credenciais inválidas' }, 401);
+    }
+  }
 
   const secret = getJwtSecret(c);
   const jti = crypto.randomUUID();
@@ -91,7 +152,7 @@ auth.post('/login', validator('json', (value, c) => {
   return c.json({
     message: 'Autenticação bem-sucedida',
     accessToken,
-    user: { cpf: username, role: 'MEDICO' }
+    user: { cpf: user.cpf, name: user.name, role: user.role }
   });
 });
 
@@ -215,6 +276,26 @@ auth.post('/refresh', validator('cookie', (value, c) => {
   const newAccessToken = await generateAccessToken(username, secret);
   const newRefreshToken = await generateRefreshToken(username, newJti, familyId, secret);
 
+  let userRole = 'MEDICO';
+  let userName = '';
+
+  if (c.env.DB) {
+    try {
+      const dbUser: any = await c.env.DB.prepare(
+        'SELECT name, role FROM users WHERE cpf = ?'
+      )
+      .bind(username)
+      .first();
+
+      if (dbUser) {
+        userRole = dbUser.role;
+        userName = dbUser.name;
+      }
+    } catch (e) {
+      console.warn("Falha ao buscar detalhes do usuário no refresh:", e);
+    }
+  }
+
   // Set the new HTTP-Only Refresh Token cookie
   setCookie(c, 'refreshToken', newRefreshToken, {
     httpOnly: true,
@@ -227,7 +308,7 @@ auth.post('/refresh', validator('cookie', (value, c) => {
   return c.json({
     message: 'Token atualizado com sucesso',
     accessToken: newAccessToken,
-    user: { cpf: username, role: 'MEDICO' }
+    user: { cpf: username, name: userName || 'Dr. Gregory House', role: userRole }
   });
 });
 
