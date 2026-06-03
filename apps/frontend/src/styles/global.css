@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-zinc-50: #fafafa;
   --color-zinc-850: #202023;
@@ -17,6 +19,12 @@
   
   --bg-aura: #fafafa;
   --text-aura: #202023;
+}
+
+/* Respond to .dark on parent wrapper or html root */
+.dark, :root.dark {
+  --bg-aura: #09090b; /* zinc-950 */
+  --text-aura: #f4f4f5; /* zinc-100 */
 }
 
 body {
