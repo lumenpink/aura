@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import Logo from '../../components/brand/Logo';
+import CloudStatus from '../../components/brand/CloudStatus';
+import { useCloudStatus } from '../core/context/CloudStatusContext';
 import { Sun, Moon } from 'lucide-react';
 
 interface LoginPageProps {
@@ -9,6 +11,7 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleTheme }) => {
+  const { status } = useCloudStatus();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -98,12 +101,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleThem
         </form>
       </div>
 
-      {/* 3. Rodapé de Segurança (Aura Cloud Status Only) */}
-      <footer className="absolute bottom-6 left-6 right-6 flex justify-center text-zinc-450 dark:text-zinc-500 text-[10px] sm:text-xs tracking-wider uppercase select-none text-center transition-all duration-300">
-        <span className="flex items-center gap-1.5 justify-center">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-          Aura Cloud: Online
-        </span>
+      {/* 3. Rodapé de Segurança (Aura Cloud Status Indicator Component) */}
+      <footer className="absolute bottom-6 left-6 right-6 flex justify-center select-none transition-all duration-300">
+        <CloudStatus status={status} showText={true} />
       </footer>
     </div>
   );

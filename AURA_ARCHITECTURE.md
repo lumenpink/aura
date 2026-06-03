@@ -14,5 +14,18 @@ Code Splitting: Roteamento baseado em lazy load para baixar módulos apenas quan
 Prefetching Estratégico: Uso de preload: 'always' para módulos vitais (Agenda/Pacientes) e preload: 'intent' para módulos contextuais (PEP/Financeiro).
 Inputs Bancários: Componentes de formulário utilizando react-hook-form com máscaras controladas (via Controller), garantindo estabilidade do cursor e integridade dos dados limpos.
 
-4. Regras de código
+4. Cloud Status
+O status do Aura Cloud é um componente visual que indica o estado atual da conexão com a nuvem. Ele deve ser exibido em todas as páginas do Aura, no canto superior direito. O status deve ser exibido em três estados: online, sincronizando, offile e erro. 
+
+5. A Stack
+5.1. Roteador: TanStack Router
+5.2. Gestão de Estado
+5.2.1. Estado do Servidor (Dados do Banco): TanStack Query (React Query)
+5.2.2. Estado do Cliente (Interface Local): Zustand
+5.3. Formulários e Validação: React Hook Form + Zod
+5.4. Hono RPC Client
+5.5. Design: Shadcn/UI + Tailwind
+
+6. Regras de código
 Todas as funções e variáveis devem ter seus nomes em inglês.
+

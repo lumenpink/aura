@@ -1,5 +1,7 @@
 import React from 'react';
 import Logo from '../../../components/brand/Logo';
+import CloudStatus from '../../../components/brand/CloudStatus';
+import { useCloudStatus } from '../context/CloudStatusContext';
 import { LayoutDashboard, Calendar, Briefcase, Settings, LogOut, Sun, Moon } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -19,6 +21,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   theme,
   toggleTheme,
 }) => {
+  const { status } = useCloudStatus();
   const menuItems = [
     { id: 'dashboard', label: 'Hub de Dashboards', icon: LayoutDashboard },
     { id: 'agenda', label: 'Agenda', icon: Calendar },
@@ -34,14 +37,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           {/* Logo & Theme Toggle */}
           <div className="flex items-center justify-between py-2">
             <Logo size="small" />
-            <button
-              onClick={toggleTheme}
-              className="p-2 hover:bg-zinc-900/5 dark:hover:bg-zinc-100/5 rounded-xl transition-all cursor-pointer text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-              title="Alternar tema"
-              aria-label="Alternar tema"
-            >
-              {theme === 'light' ? <Moon className="w-4.5 h-4.5 stroke-[1.5]" /> : <Sun className="w-4.5 h-4.5 stroke-[1.5]" />}
-            </button>
+            <div className="flex items-center gap-1">
+              <CloudStatus status={status} tooltipAlign="bottom" />
+              <button
+                onClick={toggleTheme}
+                className="p-2 hover:bg-zinc-900/5 dark:hover:bg-zinc-100/5 rounded-xl transition-all cursor-pointer text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                title="Alternar tema"
+                aria-label="Alternar tema"
+              >
+                {theme === 'light' ? <Moon className="w-4.5 h-4.5 stroke-[1.5]" /> : <Sun className="w-4.5 h-4.5 stroke-[1.5]" />}
+              </button>
+            </div>
           </div>
 
           {/* Navigation */}

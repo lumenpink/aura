@@ -1,15 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LoginPage from './modules/auth/LoginPage';
 import AppLayout from './modules/core/layout/AppLayout';
+import { CloudStatusProvider, useCloudStatus } from './modules/core/context/CloudStatusContext';
 import { ArrowUpRight, Plus, ChevronRight } from 'lucide-react';
 import './styles/global.css';
 
 export default function App() {
+  return (
+    <CloudStatusProvider>
+      <AppContent />
+    </CloudStatusProvider>
+  );
+}
+
+function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const { status: cloudStatus, setStatus: setCloudStatus, isSimulating: isSimulatingSync, setIsSimulating: setIsSimulatingSync } = useCloudStatus();
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, [theme]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
@@ -301,6 +315,34 @@ export default function App() {
                       <div className="flex items-center gap-3 mt-1">
                         <input type="checkbox" defaultChecked className="w-4 h-4 rounded text-aura-violet focus:ring-aura-violet border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950" />
                         <span className="text-xs text-zinc-600 dark:text-zinc-400">Desejo receber relatórios semanais de desempenho no meu e-mail corporativo.</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 mt-2">
+                      <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Status de Conexão (Aura Cloud)</label>
+                      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center mt-1">
+                        <select
+                          value={cloudStatus}
+                          onChange={(e) => {
+                            setCloudStatus(e.target.value as any);
+                            setIsSimulatingSync(false);
+                          }}
+                          className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl px-4 py-2.5 text-xs text-zinc-850 dark:text-zinc-200 focus:outline-hidden focus:ring-1 focus:ring-aura-violet focus:border-aura-violet"
+                        >
+                          <option value="online">🟢 Online</option>
+                          <option value="syncing">🔵 Sincronizando</option>
+                          <option value="offline">⚪ Offline</option>
+                          <option value="error">🔴 Erro</option>
+                        </select>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isSimulatingSync}
+                            onChange={(e) => setIsSimulatingSync(e.target.checked)}
+                            className="w-4 h-4 rounded text-aura-violet focus:ring-aura-violet border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950"
+                          />
+                          <span className="text-xs text-zinc-550 dark:text-zinc-450">Simular sincronização automática a cada 20s</span>
+                        </div>
                       </div>
                     </div>
                   </div>
