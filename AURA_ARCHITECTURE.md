@@ -53,6 +53,16 @@ Manifesto de Arquitetura: Projeto Aura
     Framework Backend: Hono (leve, rápido e com suporte nativo para Edge Computing).
     Banco de Dados: Cloudflare D1 (banco relacional baseado em SQLite, com latência zero na borda).
     ORM: Drizzle ORM para manter o sistema agnóstico em relação ao banco de dados.
+6.1. Segregação de Responsabilidade de Dados (CQRS Lite)
+    Isolamento de Carga (OLTP vs. OLAP): Para mitigar as limitações de concorrência e travas de escrita (database locking) nativas do SQLite no Cloudflare D1, cada silo de clínica operará com dois bancos de dados fisicamente independentes:
+    - D1_MAIN (Operacional/OLTP): Destinado a operações cotidianas de escrita e leitura de alta frequência (agendamentos, evoluções de prontuário, autenticação), garantindo latência zero na ponta.
+    - D1_ANALYTICS (Relatórios/OLAP): Destinado estritamente a consultas pesadas, agregações financeiras, paginações longas e geração de relatórios, isolando o consumo de CPU do fluxo operacional da clínica.
+    Mecânica de Sincronização Assíncrona: A replicação de dados entre os bancos ocorrerá de forma eventual e não blocante através do método nativo do Cloudflare Workers c.executionCtx.waitUntil(). O ciclo de escrita seguirá o fluxo:
+        - A mutação é validada e gravada com sucesso no D1_MAIN.
+        - O Worker dispara a rotina de espelhamento para o D1_ANALYTICS envelopada no waitUntil().
+        - A resposta HTTP de sucesso é devolvida imediatamente ao frontend, liberando a interface do usuário.
+        - O nó de borda executa a inserção no banco de analytics em background.
+    Estratégia de Resiliência (Fallback): Caso a rotina em background no D1_ANALYTICS falhe por timeout ou indisponibilidade, o adaptador de repositório interceptará a exceção e registrará de forma atômica um log de falha leve (sync_fallbacks) no próprio D1_MAIN. Um gatilho temporal periódico (Cron Trigger) varrerá essa tabela diariamente para reprocessar e reconciliar os registros pendentes, garantindo a integridade dos relatórios sem onerar a requisição ativa da usuária.
 
 7. Frontend
     O frontend será uma Single Page Application (SPA) hospedada no Cloudflare Pages, comunicando-se perfeitamente com os Workers. Foco em tipagem estrita (Type-Safety) e design premium.
