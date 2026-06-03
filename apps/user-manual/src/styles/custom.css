@@ -1,0 +1,44 @@
+/* Custom Starlight CSS overrides for Aura Platinada design system */
+
+:root {
+  /* Aura Platinada Light Theme */
+  --sl-color-bg: #fafafa; /* zinc-50 */
+  --sl-color-text: #202023; /* zinc-850 */
+  
+  /* Primary Accent: Violet (#8b5cf6) */
+  --sl-color-accent: #8b5cf6;
+  --sl-color-accent-high: #7c3aed;
+  --sl-color-accent-low: #ede9fe;
+  
+  /* Font Family standard */
+  --sl-font-sans: "Geist Sans", "Inter", sans-serif;
+}
+
+:root[data-theme='dark'] {
+  /* Aura Platinada Dark Theme */
+  --sl-color-bg: #09090b; /* zinc-950 */
+  --sl-color-text: #f4f4f5; /* zinc-100 */
+  
+  /* Accent overrides */
+  --sl-color-accent: #8b5cf6;
+  --sl-color-accent-high: #a78bfa;
+  --sl-color-accent-low: #1e1b4b;
+}
+
+/* Custom styles for Aura branding matching the Specter light highlights (#8b5cf6 and #ec4899) */
+.aura-brand-title {
+  background: linear-gradient(135deg, #8b5cf6, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 300;
+  letter-spacing: 0.1em;
+}
+
+/* Starlight header branding custom styling */
+.site-title {
+  font-family: "Geist Sans", "Inter", sans-serif;
+  font-weight: 300 !important;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}

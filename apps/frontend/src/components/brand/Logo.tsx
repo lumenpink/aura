@@ -27,11 +27,15 @@ export const Logo: React.FC<LogoProps> = ({
   const pixelSize = SIZE_MAP[size];
 
   // Select the correct SVG asset based on the variant
-  const logoSrc = {
+  const logoRawSrc = {
     original: logoUrl,
     'flat-black': logoBlackUrl,
     'flat-white': logoWhiteUrl,
   }[variant];
+
+  const logoSrc = typeof logoRawSrc === 'object' && logoRawSrc && 'src' in logoRawSrc
+    ? (logoRawSrc as any).src
+    : logoRawSrc;
 
   // Choose default text color based on the variant
   const defaultTextColor = {
