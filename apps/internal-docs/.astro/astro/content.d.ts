@@ -159,6 +159,13 @@ declare module 'astro:content' {
   collection: "docs";
   data: InferEntrySchema<"docs">
 } & { render(): Render[".md"] };
+"engenharia/sse-reatividade.mdx": {
+	id: "engenharia/sse-reatividade.mdx";
+  slug: "engenharia/sse-reatividade";
+  body: string;
+  collection: "docs";
+  data: InferEntrySchema<"docs">
+} & { render(): Render[".mdx"] };
 "index.mdx": {
 	id: "index.mdx";
   slug: "index";

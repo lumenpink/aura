@@ -1,0 +1,163 @@
+---
+title: Reatividade em Tempo Real (SSE)
+description: Especificação técnica da infraestrutura de comunicação em tempo real e invalidação de cache baseada em Server-Sent Events (SSE).
+---
+
+import Mermaid from '../../../components/Mermaid.astro';
+
+Este documento detalha o funcionamento, as justificativas de design e as estratégias de resiliência da infraestrutura de tempo real da Aura, que viabiliza a sincronização automática e silenciosa da interface.
+
+---
+
+## 1. Justificativa Arquitetural: SSE vs. WebSockets
+
+Para manter o ecossistema Aura atualizado em tempo real, optamos por **Server-Sent Events (SSE)** em detrimento de WebSockets. Esta escolha fundamenta-se nos seguintes pilares de arquitetura de software:
+
+### Eficiência Computacional na Borda (Edge Computing)
+O backend da Aura é implantado na borda utilizando **Cloudflare Workers**. 
+- **WebSockets** demandam conexões full-duplex de longa duração mantidas ativas. Em ambientes serverless baseados em isolamento (V8 Isolates), manter conexões WebSockets abertas consome memória de forma contínua, encarece o custo operacional e impõe limites rígidos de escalabilidade horizontal.
+- **SSE** funciona sobre o protocolo HTTP padrão (preferencialmente HTTP/2 ou HTTP/3). A resposta do servidor é transmitida usando `ReadableStream`, permitindo que o Worker envie blocos de dados de forma assíncrona e encerre a computação ativa assim que não houver eventos, mantendo a conexão aberta na camada de infraestrutura da rede de forma extremamente otimizada.
+
+### Modelo Unidirecional de Atualizações
+O fluxo de reatividade da Aura é puramente voltado para a **invalidação de caches de consulta** no cliente (invalidação reativa). 
+- O fluxo de dados do **Cliente para o Servidor** é integralmente atendido por chamadas RPC tipadas via **Hono RPC Client** utilizando métodos tradicionais (POST, PUT, DELETE).
+- O fluxo de dados do **Servidor para o Cliente** necessita apenas notificar que um recurso foi alterado no banco de dados SQLite (Cloudflare D1).
+Dado que o canal de tempo real é estritamente unidirecional, o uso de WebSockets (que é bidirecional) introduziria complexidade desnecessária na gerência de estado e no controle de concorrência.
+
+---
+
+## 2. Contrato do Stream (Payload Schema)
+
+A comunicação SSE é estabelecida definindo os headers HTTP adequados e transmitindo mensagens formatadas de acordo com a especificação da W3C.
+
+### Cabeçalhos de Conexão
+Para manter o stream aberto e evitar o buffer intermediário de proxies, o backend retorna as seguintes diretivas:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+Transfer-Encoding: chunked
+```
+
+### Eventos de Transmissão
+Os payloads transmitidos usam o formato padronizado do SSE, estruturado com o tipo do evento (`event`) e o corpo de dados em formato JSON compactado (`data`).
+
+#### Exemplo 1: Invalidação de Agenda
+Disparado quando um agendamento é criado, editado ou cancelado. O cliente deve invalidar as consultas da data específica para evitar sobrecarga.
+
+```http
+event: INVALIDATE
+data: {"entity":"agenda","date":"2026-06-03"}
+```
+
+#### Exemplo 2: Atualização de Prontuário de Paciente
+Disparado quando um registro clínico é modificado, identificando a entidade e o ID correspondente.
+
+```http
+event: INVALIDATE
+data: {"entity":"patient","id":"patient_9e472a1b"}
+```
+
+---
+
+## 3. Diagrama de Fluxo de Reatividade
+
+O ciclo de vida de uma atualização em tempo real segue o fluxo abaixo, onde as mutações disparam eventos SSE que subsequentemente atualizam o estado local no TanStack Query:
+
+<Mermaid code={`
+sequenceDiagram
+    autonumber
+    participant FE_App as "Frontend (React / TanStack Query)"
+    participant BE_Worker as "Backend (Hono Worker)"
+    participant D1_DB as "Cloudflare D1 Database"
+    participant SSE_Stream as "SSE Stream (EventSource)"
+
+    FE_App->>BE_Worker: 1. Mutation Request (Hono RPC Client)
+    Note over BE_Worker: Valida JWT, permissões e payload
+    BE_Worker->>D1_DB: 2. Escrita / Atualização de Registro
+    D1_DB-->>BE_Worker: Confirmação de Transação
+    BE_Worker->>SSE_Stream: 3. Despacha evento de invalidação (Broadcast)
+    BE_Worker-->>FE_App: 4. Resposta da Mutação (Sucesso)
+    
+    Note over FE_App: Conexão SSE monitorada em background
+    SSE_Stream-->>FE_App: 5. Evento Recebido (event: INVALIDATE)
+    FE_App->>FE_App: 6. queryClient.invalidateQueries({ queryKey })
+    FE_App->>BE_Worker: 7. Refetch em background (Fresh Data)
+    BE_Worker->>D1_DB: 8. Consulta ao banco de dados D1
+    D1_DB-->>BE_Worker: Retorno dos dados atualizados
+    BE_Worker-->>FE_App: 9. Atualização suave da Interface (UI)
+`} />
+
+---
+
+## 4. Resiliência e Segurança (Cloud Agnostic)
+
+Para assegurar uma reatividade robusta e segura, o canal de comunicação opera sob as especificações nativas das Web APIs, garantindo portabilidade para qualquer nuvem.
+
+### Estratégia de Reconexão Nativa
+O navegador gerencia a reconexão automática do `EventSource`. Se a conexão de rede oscilar ou for derrubada:
+1. O cliente entra em estado de reconexão automática após um atraso padrão de ~3 segundos (configurável pelo servidor via parâmetro `retry:` no stream).
+2. O servidor pode emitir o parâmetro `id:` em cada mensagem. Na reconexão, o navegador enviará automaticamente o header `Last-Event-ID`, permitindo ao backend retransmitir eventos que foram perdidos durante o intervalo de desconexão.
+
+### Segurança e Validação de Tokens
+Diferente de requisições Fetch, a API nativa do `EventSource` do navegador **não permite a definição de cabeçalhos HTTP customizados** (como `Authorization: Bearer <Token>`). Contornamos essa restrição utilizando as seguintes abordagens compatíveis com o padrão:
+
+1. **Short-lived Ticket (Recomendado)**:
+   Antes de abrir a conexão, o frontend faz uma requisição HTTP POST autenticada para obter um token de conexão de uso único e tempo de expiração curto (ex: 30 segundos). Este ticket é passado como parâmetro na URL:
+   
+   ```javascript
+   const ticketResponse = await api.auth.sseTicket.$post();
+   const eventSource = new EventSource(`/api/stream?ticket=${ticketResponse.ticket}`);
+   ```
+
+2. **Validação do Token de Acesso Curto**:
+   O token do ticket é decodificado no Worker de borda. Se for válido, a conexão SSE é estabelecida. Caso o Access Token de 15 minutos do usuário expire com a conexão já aberta:
+   - A conexão atual permanece ativa (visto que a autenticação ocorreu no handshake).
+   - Se a conexão cair, a tentativa de reconexão falhará se o Access Token tiver expirado, forçando o frontend a realizar o fluxo de refresh token silencioso antes de instanciar um novo `EventSource`.
+
+### Exemplo de Implementação Resiliente no Cliente (TypeScript)
+
+Abaixo está o padrão de consumo da API nativa implementado no frontend:
+
+```typescript
+import { QueryClient } from '@tanstack/react-query';
+
+interface InvalidationPayload {
+  entity: string;
+  id?: string;
+  date?: string;
+}
+
+export function setupRealtimeSync(queryClient: QueryClient, ticket: string) {
+  const url = `/api/stream?ticket=${encodeURIComponent(ticket)}`;
+  const eventSource = new EventSource(url);
+
+  eventSource.addEventListener('INVALIDATE', (event) => {
+    try {
+      const payload: InvalidationPayload = JSON.parse(event.data);
+      
+      // Constrói a chave de consulta com base no payload
+      const queryKey = [payload.entity];
+      if (payload.date) queryKey.push(payload.date);
+      if (payload.id) queryKey.push(payload.id);
+
+      // Invalida a query de forma silenciosa para disparar o refetch
+      queryClient.invalidateQueries({ queryKey });
+      console.log(`[SSE] Cache invalidado para a chave:`, queryKey);
+    } catch (err) {
+      console.error('[SSE] Falha ao parsear payload de invalidação:', err);
+    }
+  });
+
+  eventSource.onerror = (err) => {
+    console.error('[SSE] Erro na conexão de eventos:', err);
+    // O navegador tentará reconectar automaticamente seguindo a política de retry do SSE
+  };
+
+  return () => {
+    eventSource.close();
+  };
+}
+```

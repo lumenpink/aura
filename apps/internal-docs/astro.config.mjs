@@ -13,6 +13,7 @@ export default defineConfig({
         { slug: 'arquitetura-monorepo' },
         { slug: 'seguranca-rotacao-tokens' },
         { slug: 'mapeamento-banco-d1' },
+        { slug: 'engenharia/sse-reatividade' },
       ],
     }),
     react(),
