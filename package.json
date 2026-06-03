@@ -6,9 +6,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:backend": "bun --cwd apps/backend dev",
-    "dev:frontend": "bun --cwd apps/frontend dev",
-    "dev": "concurrently -n \"back,front\" -c \"blue,magenta\" \"bun dev:backend\" \"bun dev:frontend\"",
+    "dev:frontend": "bun --cwd apps/frontend dev --port 12201 --strictPort",
+    "dev:backend": "bun --cwd apps/backend dev --port 12202",
+    "dev": "concurrently -n \"front,back\" -c \"blue,magenta\" \"bun dev:frontend\" \"bun dev:backend\"",
     "test": "bun test",
     "test:shared": "bun test test/shared",
     "test:backend": "bun test test/backend",
