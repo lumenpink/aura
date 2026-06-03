@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "hono": "^4.12.23",
-    "@aura/shared": "workspace:*"
+    "@aura/shared": "workspace:*",
+    "drizzle-orm": "^0.30.10"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260602.1",

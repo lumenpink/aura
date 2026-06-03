@@ -1,45 +1,62 @@
 import { Hono } from 'hono';
 import auth from './routes/auth';
+import type { Bindings } from './types';
 
-type Bindings = {
-  VITE_AUTH_URL?: string;
-  VITE_API_URL?: string;
-};
-
+// Initialize the main Hono application instance
 const app = new Hono<{ Bindings: Bindings }>();
 
-// Middleware global para isolamento de subdomínios (Auth vs API)
-app.use('*', async (c, next) => {
+// 1. Setup the Dedicated Authentication Sub-router
+const authRouter = new Hono<{ Bindings: Bindings }>();
+
+// Global middleware for the Authentication sub-router to enforce AUTH_DOMAIN isolation
+authRouter.use('*', async (c, next) => {
   const reqHost = c.req.header('host');
-  const path = c.req.path;
-  
-  const expectedAuthUrl = c.env.VITE_AUTH_URL;
-  const expectedApiUrl = c.env.VITE_API_URL;
-  
-  if (expectedAuthUrl && expectedApiUrl) {
-    try {
-      const authHost = new URL(expectedAuthUrl).host;
-      const apiHost = new URL(expectedApiUrl).host;
-      
-      if (reqHost === authHost) {
-        // No domínio de autenticação, apenas a rota de refresh (/api/auth/refresh) é permitida.
-        if (path !== '/api/auth/refresh') {
-          return c.json({ error: 'Acesso negado', code: 'JQ488' }, 403);
-        }
-      } else if (reqHost === apiHost) {
-        // No domínio de API geral, a rota de refresh é bloqueada.
-        if (path === '/api/auth/refresh') {
-          return c.json({ error: 'Acesso negado', code: 'JQ487' }, 403);
-        }
-      }
-    } catch (err) {
-      console.warn('[Root Middleware] Erro ao validar host de subdomínio:', err);
-    }
+  const expectedAuthDomain = c.env.AUTH_DOMAIN;
+
+  if (expectedAuthDomain && reqHost !== expectedAuthDomain) {
+    return c.json({ error: 'Acesso negado', code: 'JQ487' }, 403);
   }
-  
+
   await next();
 });
 
-app.route('/api/auth', auth);
+// Nest the actual authentication routes under the auth sub-router
+authRouter.route('/', auth);
+
+// 2. Setup the Dedicated Clinical API Sub-router
+const apiRouter = new Hono<{ Bindings: Bindings }>();
+
+// Global middleware for the Clinical API sub-router to enforce API_DOMAIN isolation
+apiRouter.use('*', async (c, next) => {
+  const reqHost = c.req.header('host');
+  const expectedApiDomain = c.env.API_DOMAIN;
+
+  if (expectedApiDomain && reqHost !== expectedApiDomain) {
+    return c.json({ error: 'Acesso negado', code: 'JQ488' }, 403);
+  }
+
+  await next();
+});
+
+// Register stubs for clinical operational endpoints
+apiRouter.get('/patients', (c) => {
+  return c.json({
+    status: 'success',
+    message: 'Patients operational endpoint stub',
+    data: []
+  });
+});
+
+apiRouter.get('/agenda', (c) => {
+  return c.json({
+    status: 'success',
+    message: 'Agenda operational endpoint stub',
+    data: []
+  });
+});
+
+// Mount the configured sub-routers under their respective prefixes
+app.route('/auth', authRouter);
+app.route('/api', apiRouter);
 
 export default app;
