@@ -8,6 +8,7 @@
   "scripts": {
     "dev:backend": "bun --cwd apps/backend dev",
     "dev:frontend": "bun --cwd apps/frontend dev",
+    "dev": "concurrently -n \"back,front\" -c \"blue,magenta\" \"bun dev:backend\" \"bun dev:frontend\"",
     "test": "bun test",
     "test:shared": "bun test test/shared",
     "test:backend": "bun test test/backend",
@@ -15,6 +16,7 @@
   },
   "dependencies": {
     "autoprefixer": "^10.5.0",
+    "concurrently": "^10.0.3",
     "lucide-react": "^1.17.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.3.0"
