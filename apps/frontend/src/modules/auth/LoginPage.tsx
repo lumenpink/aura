@@ -3,18 +3,18 @@ import Logo from '../../components/brand/Logo';
 import { Sun, Moon } from 'lucide-react';
 
 interface LoginPageProps {
-  onLogin: (email: string) => void;
+  onLogin: (username: string) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleTheme }) => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin(email);
+    onLogin(username);
   };
 
   return (
@@ -30,11 +30,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleThem
 
       {/* 1. Camada de Fundo (Ambient Light & Waves) */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
-        {/* Ambient Lights simulating logo emission - stronger in dark mode */}
         <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] min-w-[500px] min-h-[500px] rounded-full bg-violet-500/[0.04] dark:bg-violet-500/[0.08] blur-[120px] transition-all duration-300" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] min-w-[500px] min-h-[500px] rounded-full bg-pink-500/[0.04] dark:bg-pink-500/[0.08] blur-[120px] transition-all duration-300" />
         
-        {/* SVG Waves - increased opacity in dark mode */}
         <svg className="absolute bottom-0 left-0 w-full h-[60vh] min-h-[400px]" viewBox="0 0 1440 600" fill="none" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="waveGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -61,19 +59,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleThem
       <div className="w-full max-w-[420px] backdrop-blur-xl bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/50 rounded-3xl p-10 shadow-2xl dark:shadow-black/40 aura-glow transition-all duration-300">
         <div className="flex flex-col items-center mb-8 text-center">
           <Logo orientation="vertical" size="large" />
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-4">Insira suas credenciais para acessar o painel administrativo.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 ml-1">E-mail corporativo</label>
+            <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 ml-1">Usuário</label>
             <input
-              type="email"
+              type="text"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="nome@aura.design"
-              className="w-full bg-zinc-50/50 dark:bg-zinc-950/50 border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl px-4 py-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-aura-violet focus:border-aura-violet transition-all duration-200 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="000.000.000-00"
+              className="w-full bg-zinc-50/50 dark:bg-zinc-950/50 border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl px-4 py-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-aura-violet focus:border-aura-violet transition-all duration-200 text-zinc-900 dark:text-zinc-100 placeholder-zinc-450 dark:placeholder-zinc-650"
             />
           </div>
 
@@ -88,7 +85,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleThem
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••••••"
-              className="w-full bg-zinc-50/50 dark:bg-zinc-950/50 border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl px-4 py-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-aura-violet focus:border-aura-violet transition-all duration-200 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600"
+              className="w-full bg-zinc-50/50 dark:bg-zinc-950/50 border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl px-4 py-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-aura-violet focus:border-aura-violet transition-all duration-200 text-zinc-900 dark:text-zinc-100 placeholder-zinc-450 dark:placeholder-zinc-650"
             />
           </div>
 
@@ -96,22 +93,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleThem
             type="submit"
             className="w-full py-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 rounded-xl font-medium text-sm hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all duration-200 cursor-pointer shadow-md shadow-zinc-900/10 active:scale-[0.98] mt-2"
           >
-            Entrar no ecossistema
+            Acessar
           </button>
         </form>
-
-        <div className="mt-8 text-center">
-          <span className="text-[11px] text-zinc-400 dark:text-zinc-500">Não tem acesso? </span>
-          <a href="#request" className="text-[11px] text-aura-violet dark:text-violet-400 font-semibold hover:underline">Solicitar convite</a>
-        </div>
       </div>
 
-      {/* 3. Rodapé de Segurança (Trust Footer) */}
-      <footer className="absolute bottom-6 left-6 right-6 flex flex-wrap gap-4 sm:gap-6 justify-center text-zinc-400 dark:text-zinc-500 text-[10px] sm:text-xs tracking-wider uppercase select-none text-center transition-all duration-300">
-        <span>Ambiente Seguro LGPD</span>
-        <span className="text-zinc-200 dark:text-zinc-800 hidden sm:inline">|</span>
-        <span>Criptografia de Elite</span>
-        <span className="text-zinc-200 dark:text-zinc-800 hidden sm:inline">|</span>
+      {/* 3. Rodapé de Segurança (Aura Cloud Status Only) */}
+      <footer className="absolute bottom-6 left-6 right-6 flex justify-center text-zinc-450 dark:text-zinc-500 text-[10px] sm:text-xs tracking-wider uppercase select-none text-center transition-all duration-300">
         <span className="flex items-center gap-1.5 justify-center">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
           Aura Cloud: Online
