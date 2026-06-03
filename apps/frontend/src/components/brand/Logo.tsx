@@ -7,6 +7,7 @@ interface LogoProps {
   size?: 'small' | 'medium' | 'large';
   showText?: boolean;
   variant?: 'original' | 'flat-black' | 'flat-white';
+  orientation?: 'horizontal' | 'vertical';
   className?: string;
 }
 
@@ -20,6 +21,7 @@ export const Logo: React.FC<LogoProps> = ({
   size = 'medium',
   showText = true,
   variant = 'original',
+  orientation = 'horizontal',
   className = '',
 }) => {
   const pixelSize = SIZE_MAP[size];
@@ -42,7 +44,7 @@ export const Logo: React.FC<LogoProps> = ({
   const hasTextColor = /\btext-/.test(className);
 
   return (
-    <div className={`inline-flex items-center gap-3.5 ${hasTextColor ? '' : defaultTextColor} ${className}`}>
+    <div className={`inline-flex ${orientation === 'vertical' ? 'flex-col items-center text-center gap-3' : 'items-center gap-3.5'} ${hasTextColor ? '' : defaultTextColor} ${className}`}>
       <img
         src={logoSrc}
         width={pixelSize}
