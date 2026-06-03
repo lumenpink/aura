@@ -17,6 +17,7 @@ type Bindings = {
   DB?: any;
   REVOCATION_KV?: any;
   JWT_SECRET?: string;
+  VITE_AUTH_URL?: string;
 };
 
 const auth = new Hono<{ Bindings: Bindings }>();
@@ -167,14 +168,16 @@ auth.post('/login', validator('json', (value, c) => {
 });
 
 // Rota de Refresh Token com Rotação (RTR) e Detecção de Reuso
-auth.post('/refresh', validator('cookie', (value, c) => {
-  const parsed = refreshCookieSchema.safeParse(value);
-  if (!parsed.success) {
-    return c.json({ error: 'Refresh token ausente ou inválido', details: parsed.error }, 401);
-  }
-  return parsed.data;
-}), async (c) => {
-  const { refreshToken } = c.req.valid('cookie');
+auth.post('/refresh', 
+  validator('cookie', (value, c) => {
+    const parsed = refreshCookieSchema.safeParse(value);
+    if (!parsed.success) {
+      return c.json({ error: 'Refresh token ausente ou inválido', details: parsed.error }, 401);
+    }
+    return parsed.data;
+  }),
+  async (c) => {
+    const { refreshToken } = c.req.valid('cookie');
   const secret = getJwtSecret(c);
 
   let payload: any;

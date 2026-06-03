@@ -6,8 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:frontend": "bun --cwd apps/frontend dev --port 12201 --strictPort",
-    "dev:backend": "bun --cwd apps/backend dev --port 12202",
+    "dev:frontend": "bun --env-file=.env.local --cwd apps/frontend dev --port 12201 --strictPort",
+    "dev:backend": "bun --env-file=.env.local --cwd apps/backend dev --port 12202",
     "dev": "concurrently -n \"front,back\" -c \"blue,magenta\" \"bun dev:frontend\" \"bun dev:backend\"",
     "test": "bun test",
     "test:shared": "bun test test/shared",

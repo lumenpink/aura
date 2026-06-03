@@ -14,6 +14,7 @@ export default defineConfig({
         { slug: 'seguranca-rotacao-tokens' },
         { slug: 'mapeamento-banco-d1' },
         { slug: 'engenharia/sse-reatividade' },
+        { slug: 'engenharia/codigos-erro' },
       ],
     }),
     react(),
