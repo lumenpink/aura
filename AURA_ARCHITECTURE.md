@@ -19,7 +19,13 @@ App Shell e Login Minimalista: A interface de entrada e o esqueleto de navegaç�
 Iconografia Estrita: Uso exclusivo de ícones de linhas finas da biblioteca lucide-react em todo o sistema para garantir leveza, precisão e padronização visual.
 
 4. Cloud Status
-O status do Aura Cloud é um componente visual que indica o estado atual da conexão com a nuvem. No painel principal (App Shell), ele deve ser exibido no cabeçalho da barra lateral esquerda (Sidebar), posicionado de forma discreta ao lado do seletor de tema. Na página de login, ele deve ser exibido no rodapé da página acompanhado do texto 'Aura Cloud: [status]'. O status deve ser exibido em quatro estados: online (nuvem com check discreto), sincronizando (setas circulares animadas), offline (disco rígido) e erro (triângulo de alerta). Quando exibido apenas na forma de ícone, o componente deve possuir suporte a tooltip (com visual glassmorphic) ativado por passagem de mouse (hover) e por clique/toque (touch), contendo descarte automático (auto-dismiss) ao clicar em qualquer outra área da tela.
+O status do Aura Cloud é um componente visual que indica o estado atual da topologia e da conexão do sistema. No painel principal (App Shell), ele deve ser exibido no cabeçalho da barra lateral esquerda (Sidebar), posicionado de forma discreta ao lado do seletor de tema. Na página de login, ele deve ser exibido no rodapé da página acompanhado do texto descritivo do status atual. O componente deve mapear cinco estados distintos de rede:
+Aura Cloud (Online): Conexão plena com a infraestrutura de borda (ícone de nuvem com check discreto).
+Aura Sync (Sincronizando): Transmitindo pacotes de dados represados (setas circulares com animação leve).
+Aura LAN (Rede Local): Sem acesso à internet, mas operando ativamente conectado ao servidor local ou VPN da clínica (ícone de servidor de rack).
+Aura Local (Dispositivo): Isolamento de rede total, operando os dados exclusivamente no armazenamento da própria máquina (ícone de disco rígido ou laptop).
+Aura Erro (Falha): Interrupção de serviço não mapeada (triângulo de alerta com contorno fino).
+Quando exibido apenas na forma de ícone, o componente deve possuir suporte a tooltip (com visual glassmorphic) ativado por passagem de mouse (hover) e por toque (touch), contendo descarte automático (auto-dismiss) ao clicar em qualquer outra área da tela.
 
 5. A Stack
 5.1. Roteador: TanStack Router
