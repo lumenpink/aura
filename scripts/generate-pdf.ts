@@ -1,9 +1,9 @@
 import { join, relative, basename, dirname } from "path";
 import { readdirSync, statSync, mkdirSync, copyFileSync, existsSync, writeFileSync, readFileSync, rmSync } from "fs";
 
-const WORKSPACE_ROOT = "/home/lumen/aura";
+const WORKSPACE_ROOT = join(import.meta.dir, "..");
 const EXPORT_DIR = join(WORKSPACE_ROOT, "pdf-exports");
-const SYSTEM_ARTIFACTS_PDF_DIR = "/home/lumen/.gemini/antigravity-ide/brain/d5e35249-ce41-4e50-b55e-50628efc1e41/pdf";
+const SYSTEM_ARTIFACTS_PDF_DIR = process.env.SYSTEM_ARTIFACTS_PDF_DIR || "";
 
 // Predefined page orders for merging (based on Starlight sidebar configurations)
 const PAGE_ORDERS: Record<string, string[]> = {
@@ -35,11 +35,13 @@ if (existsSync(EXPORT_DIR)) {
 }
 mkdirSync(EXPORT_DIR, { recursive: true });
 
-if (existsSync(SYSTEM_ARTIFACTS_PDF_DIR)) {
-  console.log(`Cleaning old artifacts PDF directory: ${SYSTEM_ARTIFACTS_PDF_DIR}`);
-  rmSync(SYSTEM_ARTIFACTS_PDF_DIR, { recursive: true, force: true });
+if (SYSTEM_ARTIFACTS_PDF_DIR) {
+  if (existsSync(SYSTEM_ARTIFACTS_PDF_DIR)) {
+    console.log(`Cleaning old artifacts PDF directory: ${SYSTEM_ARTIFACTS_PDF_DIR}`);
+    rmSync(SYSTEM_ARTIFACTS_PDF_DIR, { recursive: true, force: true });
+  }
+  mkdirSync(SYSTEM_ARTIFACTS_PDF_DIR, { recursive: true });
 }
-mkdirSync(SYSTEM_ARTIFACTS_PDF_DIR, { recursive: true });
 
 // Recursively find all HTML files
 function getHtmlFiles(dir: string, baseDir: string = dir): string[] {
@@ -150,9 +152,12 @@ async function generateProjectPdfs(projectName: string, projectDir: string) {
     if (!existsSync(projExportDir)) {
       mkdirSync(projExportDir, { recursive: true });
     }
-    const projSystemDir = join(SYSTEM_ARTIFACTS_PDF_DIR, subDirName);
-    if (!existsSync(projSystemDir)) {
-      mkdirSync(projSystemDir, { recursive: true });
+    let projSystemDir = "";
+    if (SYSTEM_ARTIFACTS_PDF_DIR) {
+      projSystemDir = join(SYSTEM_ARTIFACTS_PDF_DIR, subDirName);
+      if (!existsSync(projSystemDir)) {
+        mkdirSync(projSystemDir, { recursive: true });
+      }
     }
 
     const chapters: string[] = [];
@@ -543,8 +548,10 @@ async function generateProjectPdfs(projectName: string, projectDir: string) {
       console.log(`Consolidated PDF created at: ${consolidatedOutputPath}`);
       
       // Copy to system artifacts folder
-      const consolidatedSystemPath = join(projSystemDir, consolidatedName);
-      copyFileSync(consolidatedOutputPath, consolidatedSystemPath);
+      if (projSystemDir) {
+        const consolidatedSystemPath = join(projSystemDir, consolidatedName);
+        copyFileSync(consolidatedOutputPath, consolidatedSystemPath);
+      }
     }
 
   } finally {
@@ -565,7 +572,9 @@ async function main() {
     console.log("\n================================================");
     console.log("PDF Generation and Consolidation Complete!");
     console.log(`Local Workspace PDF Directory: ${EXPORT_DIR}`);
-    console.log(`IDE Artifacts PDF Directory: ${SYSTEM_ARTIFACTS_PDF_DIR}`);
+    if (SYSTEM_ARTIFACTS_PDF_DIR) {
+      console.log(`IDE Artifacts PDF Directory: ${SYSTEM_ARTIFACTS_PDF_DIR}`);
+    }
     console.log("================================================");
   } catch (error) {
     console.error("PDF Generation Failed:", error);
