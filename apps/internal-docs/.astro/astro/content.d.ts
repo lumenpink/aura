@@ -159,6 +159,13 @@ declare module 'astro:content' {
   collection: "docs";
   data: InferEntrySchema<"docs">
 } & { render(): Render[".md"] };
+"data-e-api.mdx": {
+	id: "data-e-api.mdx";
+  slug: "data-e-api";
+  body: string;
+  collection: "docs";
+  data: InferEntrySchema<"docs">
+} & { render(): Render[".mdx"] };
 "engenharia/codigos-erro.md": {
 	id: "engenharia/codigos-erro.md";
   slug: "engenharia/codigos-erro";
