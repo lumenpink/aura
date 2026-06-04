@@ -174,11 +174,11 @@ async function generateProjectPdfs(projectName: string, projectDir: string) {
 
       // Extract Title
       const titleMatch = htmlContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-      let pageTitle = titleMatch ? titleMatch[1].trim() : "Documento";
+      let pageTitle = titleMatch?.[1]?.trim() || "Documento";
       if (pageTitle.includes("|")) {
-        pageTitle = pageTitle.split("|")[0].trim();
+        pageTitle = pageTitle.split("|")[0]?.trim() || pageTitle;
       } else if (pageTitle.includes("—")) {
-        pageTitle = pageTitle.split("—")[0].trim();
+        pageTitle = pageTitle.split("—")[0]?.trim() || pageTitle;
       }
 
       // Clarify introduction page title

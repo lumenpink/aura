@@ -169,7 +169,7 @@ describe("Backend Authentication Router", () => {
   describe("1. Input Schema Validation", () => {
     it("should accept valid credentials", async () => {
       const res = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -185,7 +185,7 @@ describe("Backend Authentication Router", () => {
 
     it("should reject invalid CPF format before checking DB", async () => {
       const res = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -200,7 +200,7 @@ describe("Backend Authentication Router", () => {
 
     it("should reject short password before checking DB", async () => {
       const res = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -213,7 +213,7 @@ describe("Backend Authentication Router", () => {
 
     it("should reject /refresh if refreshToken cookie is missing", async () => {
       const res = await app.request(
-        "/api/auth/refresh",
+        "/auth/refresh",
         {
           method: "POST",
         },
@@ -228,7 +228,7 @@ describe("Backend Authentication Router", () => {
   describe("2. Database Verification & Logic", () => {
     it("should reject login if user is not found in D1", async () => {
       const res = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -243,7 +243,7 @@ describe("Backend Authentication Router", () => {
 
     it("should reject login if password hash does not match D1", async () => {
       const res = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -259,7 +259,7 @@ describe("Backend Authentication Router", () => {
     it("should rotate token and update session in-place", async () => {
       // Step 1: Login to get cookie and sid
       const loginRes = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -282,7 +282,7 @@ describe("Backend Authentication Router", () => {
 
       // Step 3: Refresh using the valid cookie
       const refreshRes = await app.request(
-        "/api/auth/refresh",
+        "/auth/refresh",
         {
           method: "POST",
           headers: { "Cookie": `refreshToken=${originalRefreshToken}` }
@@ -302,7 +302,7 @@ describe("Backend Authentication Router", () => {
     it("should revoke session and return 403 when immediate parent token is reused", async () => {
       // Step 1: Login
       const loginRes = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -315,7 +315,7 @@ describe("Backend Authentication Router", () => {
 
       // Step 2: Rotate once
       const refreshRes1 = await app.request(
-        "/api/auth/refresh",
+        "/auth/refresh",
         {
           method: "POST",
           headers: { "Cookie": `refreshToken=${originalToken}` }
@@ -326,7 +326,7 @@ describe("Backend Authentication Router", () => {
 
       // Step 3: Re-use the original token (which is now last_token_jti)
       const reuseRes = await app.request(
-        "/api/auth/refresh",
+        "/auth/refresh",
         {
           method: "POST",
           headers: { "Cookie": `refreshToken=${originalToken}` }
@@ -343,7 +343,7 @@ describe("Backend Authentication Router", () => {
     it("should revoke session and return 403 when penultimate token is reused (double delay attack)", async () => {
       // Step 1: Login
       const loginRes = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -356,7 +356,7 @@ describe("Backend Authentication Router", () => {
 
       // Step 2: Rotate once (original becomes last_token)
       const refreshRes1 = await app.request(
-        "/api/auth/refresh",
+        "/auth/refresh",
         {
           method: "POST",
           headers: { "Cookie": `refreshToken=${originalToken}` }
@@ -367,7 +367,7 @@ describe("Backend Authentication Router", () => {
 
       // Step 3: Rotate twice (original becomes penultimate_token)
       const refreshRes2 = await app.request(
-        "/api/auth/refresh",
+        "/auth/refresh",
         {
           method: "POST",
           headers: { "Cookie": `refreshToken=${secondToken}` }
@@ -378,7 +378,7 @@ describe("Backend Authentication Router", () => {
 
       // Step 4: Re-use the original token (penultimate)
       const reuseRes = await app.request(
-        "/api/auth/refresh",
+        "/auth/refresh",
         {
           method: "POST",
           headers: { "Cookie": `refreshToken=${originalToken}` }
@@ -401,7 +401,7 @@ describe("Backend Authentication Router", () => {
       );
 
       const res = await app.request(
-        "/api/auth/refresh",
+        "/auth/refresh",
         {
           method: "POST",
           headers: { "Cookie": `refreshToken=${badToken}` }
@@ -418,7 +418,7 @@ describe("Backend Authentication Router", () => {
 
       // Device 1 Login
       await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -429,7 +429,7 @@ describe("Backend Authentication Router", () => {
 
       // Device 2 Login
       await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -447,7 +447,7 @@ describe("Backend Authentication Router", () => {
 
       // Device 1 Login
       await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -460,7 +460,7 @@ describe("Backend Authentication Router", () => {
 
       // Device 2 Login
       await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -480,7 +480,7 @@ describe("Backend Authentication Router", () => {
     it("should delete session and blocklist sid on logout", async () => {
       // Step 1: Login
       const loginRes = await app.request(
-        "/api/auth/login",
+        "/auth/login",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -493,7 +493,7 @@ describe("Backend Authentication Router", () => {
 
       // Step 2: Logout
       const logoutRes = await app.request(
-        "/api/auth/logout",
+        "/auth/logout",
         {
           method: "POST",
           headers: { "Cookie": `refreshToken=${token}` }
