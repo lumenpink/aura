@@ -17,7 +17,6 @@ type Bindings = {
   DB?: any;
   REVOCATION_KV?: any;
   JWT_SECRET?: string;
-  VITE_AUTH_URL?: string;
 };
 
 const auth = new Hono<{ Bindings: Bindings }>();
@@ -156,7 +155,7 @@ auth.post('/login', validator('json', (value, c) => {
     httpOnly: true,
     secure: true,
     sameSite: 'Strict',
-    path: '/',
+    path: '/auth',
     maxAge: configs.cookieTtlSeconds,
   });
 
@@ -247,7 +246,7 @@ auth.post('/refresh',
     }
     localTokenStore.delete(sid);
 
-    deleteCookie(c, 'refreshToken', { path: '/' });
+    deleteCookie(c, 'refreshToken', { path: '/auth' });
     return c.json({ error: 'Tentativa de reuso de refresh token detectada. Acesso revogado por segurança.' }, 403);
   }
 
@@ -313,7 +312,7 @@ auth.post('/refresh',
     httpOnly: true,
     secure: true,
     sameSite: 'Strict',
-    path: '/',
+    path: '/auth',
     maxAge: configs.cookieTtlSeconds,
   });
 
@@ -359,7 +358,7 @@ auth.post('/logout', async (c) => {
   }
 
   // Limpa o cookie
-  deleteCookie(c, 'refreshToken', { path: '/' });
+  deleteCookie(c, 'refreshToken', { path: '/auth' });
 
   return c.json({ message: 'Logoff efetuado com sucesso' });
 });

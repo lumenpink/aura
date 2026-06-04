@@ -22,7 +22,7 @@ Para atingir conformidade estrita de segurança (OWASP), a Aura divide as respon
      - `HttpOnly`: Impede a leitura do token via scripts JavaScript (mitigação contra XSS).
      - `Secure`: Transmitido exclusivamente sob conexões HTTPS cifradas.
      - `SameSite=Strict`: Restringe o envio do cookie apenas a requisições originadas do mesmo contexto de domínio (mitigação contra Cross-Site Request Forgery - CSRF).
-     - `Domain`: Restrito ao escopo do subdomínio de autenticação (`auth-aura.2lp.in`).
+     - `Path`: Restrito ao escopo do diretório de autenticação (`/auth`) no domínio da API (`api.clinicaexemplo.com.br`).
 
 ---
 
@@ -33,10 +33,10 @@ O diagrama a seguir descreve o ciclo de vida completo do usuário na aplicação
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as Cliente (app-aura.2lp.in)
+    participant Client as Cliente (app.clinicaexemplo.com.br)
     participant Interceptor as Interceptador HTTP
-    participant AuthAPI as Auth API (auth-aura.2lp.in)
-    participant CoreAPI as Core API (api-aura.2lp.in)
+    participant AuthAPI as Auth API (api.clinicaexemplo.com.br/auth)
+    participant CoreAPI as Core API (api.clinicaexemplo.com.br/api)
     participant D1 as Banco de Dados (D1/KV)
 
     Note over Client, AuthAPI: 1. Fluxo de Login Inicial
@@ -77,7 +77,7 @@ No frontend, a biblioteca de chamadas HTTP (como Axios ou um wrapper customizado
 Quando o primeiro erro `401 Unauthorized` com a causa `Token Expired` é capturado:
 1. Um sinalizador `isRefreshing` é ativado para evitar disparos múltiplos de refresh em paralelo.
 2. Todas as demais requisições operacionais de saída são empilhadas em uma fila de espera (`refreshQueue`).
-3. Uma chamada de refresh é feita ao `/auth/refresh` no subdomínio isolado.
+3. Uma chamada de refresh é feita ao `/auth/refresh` no caminho isolado.
 4. Ao receber o novo `accessToken`:
    - Atualiza-se o estado global/memória do frontend.
    - Executa-se todas as requisições represadas na `refreshQueue` com o novo token de acesso no cabeçalho.

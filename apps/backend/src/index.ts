@@ -8,13 +8,18 @@ const app = new Hono<{ Bindings: Bindings }>();
 // 1. Setup the Dedicated Authentication Sub-router
 const authRouter = new Hono<{ Bindings: Bindings }>();
 
-// Global middleware for the Authentication sub-router to enforce AUTH_DOMAIN isolation
+// Global middleware for the Authentication sub-router to enforce API_DOMAIN and path isolation
 authRouter.use('*', async (c, next) => {
   const reqHost = c.req.header('host');
-  const expectedAuthDomain = c.env.AUTH_DOMAIN;
+  const expectedApiDomain = c.env.API_DOMAIN;
 
-  if (expectedAuthDomain && reqHost !== expectedAuthDomain) {
+  if (expectedApiDomain && reqHost !== expectedApiDomain) {
     return c.json({ error: 'Acesso negado', code: 'JQ487' }, 403);
+  }
+
+  const path = c.req.path;
+  if (!path.startsWith('/auth')) {
+    return c.json({ error: 'Acesso negado', code: 'JQ487_PATH' }, 403);
   }
 
   await next();

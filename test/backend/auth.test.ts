@@ -269,6 +269,7 @@ describe("Backend Authentication Router", () => {
       );
       const cookieHeader = loginRes.headers.get("Set-Cookie");
       expect(cookieHeader).toBeDefined();
+      expect(cookieHeader!.toLowerCase()).toContain("path=/auth");
       const tokenMatch = cookieHeader!.match(/refreshToken=([^;]+)/);
       expect(tokenMatch).toBeDefined();
       const originalRefreshToken = tokenMatch![1]!;
@@ -505,6 +506,48 @@ describe("Backend Authentication Router", () => {
       // Session deleted and revoked in KV
       expect(sessionsMap.has(sid)).toBe(false);
       expect(kvMap.get(`revoked:session:${sid}`)).toBe("1");
+    });
+  });
+
+  describe("7. Path and Domain Isolation", () => {
+    const isolatedEnv = {
+      ...env,
+      API_DOMAIN: "api.clinicaexemplo.com.br"
+    };
+
+    it("should accept request on /auth with correct Host header", async () => {
+      const res = await app.request(
+        "/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Host": "api.clinicaexemplo.com.br"
+          },
+          body: JSON.stringify({ username: "123.456.789-09", password: "senha123" })
+        },
+        isolatedEnv
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it("should reject request with incorrect Host header on /auth routes", async () => {
+      const res = await app.request(
+        "/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Host": "invalid-host.com"
+          },
+          body: JSON.stringify({ username: "123.456.789-09", password: "senha123" })
+        },
+        isolatedEnv
+      );
+      expect(res.status).toBe(403);
+      const data: any = await res.json();
+      expect(data.error).toBe("Acesso negado");
+      expect(data.code).toBe("JQ487");
     });
   });
 });

@@ -14,12 +14,10 @@ export interface Bindings {
   REVOCATION_KV?: KVNamespace;
   
   // Domain routing validations
-  AUTH_DOMAIN: string;
   API_DOMAIN: string;
   
   // Security and routing variables
   JWT_SECRET?: string;
-  VITE_AUTH_URL?: string;
   VITE_API_URL?: string;
 }
 

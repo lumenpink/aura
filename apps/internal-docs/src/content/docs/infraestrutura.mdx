@@ -13,7 +13,7 @@ O backend da Aura é implantado como microsserviços modulares em Cloudflare Wor
 
 - **Desenvolvimento Local (`wrangler dev`)**: Executa o runtime do Worker localmente, emulando bindings de banco D1 e KV Namespace.
 - **Definições de Configurações (`wrangler.toml`)**: Localizado em `apps/backend/wrangler.toml`, mapeia bindings estáticos como bancos D1 e Namespaces de KV.
-- **Segredos locais (`.dev.vars`)**: Arquivo ignorado no git que armazena segredos de criptografia e variáveis dinâmicas (ex: `JWT_SECRET`, `AUTH_DOMAIN`, `API_DOMAIN`). No monorepo Aura, este arquivo é um link simbólico que aponta para o `.env.local` na raiz do projeto, mantendo as configurações centralizadas.
+- **Segredos de desenvolvimento (`.env.local`)**: Arquivo ignorado no git na raiz do projeto que armazena segredos de criptografia e variáveis dinâmicas (ex: `JWT_SECRET`, `API_DOMAIN`). O Bun lê este arquivo nativamente e injeta as variáveis no processo de execução do Wrangler, mantendo as configurações centralizadas.
 
 ### Comando Único de Start do Workspace
 Para rodar toda a topologia local (Frontend Vite + Backend Wrangler) de forma concorrente:
@@ -29,9 +29,8 @@ Para espelhar a produção localmente sem onerar a rede ou gerar custos, o monor
 
 - **Persistência Relacional**: O Cloudflare D1 local roda em arquivos SQLite físicos salvos no diretório `.wrangler/state/v3/d1`.
 - **Roteamento de Subdomínios**: Mapeado por meio de túneis locais ou arquivos de hosts do sistema (`/etc/hosts` ou similar):
-  - `app-aura.2lp.in` -> Direcionado para o Vite na porta `12201`.
-  - `api-aura.2lp.in` -> Direcionado para o Wrangler na porta `12202`.
-  - `auth-aura.2lp.in` -> Direcionado para o Wrangler na porta `12202`.
+  - `app.clinicaexemplo.com.br` -> Direcionado para o Vite na porta `12201`.
+  - `api.clinicaexemplo.com.br` -> Direcionado para o Wrangler na porta `12202` (caminhos operacionais sob `/api/*` e autenticação sob `/auth/*`).
 
 ---
 
