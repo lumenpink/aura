@@ -1,0 +1,62 @@
+---
+title: Diretrizes de Desenvolvimento
+description: Stack tecnológica, pilares de UX, padrões de código e convenções do ecossistema Aura.
+---
+
+Este documento consolida as diretrizes operacionais de design de código, UX de excelência, convenções de desenvolvimento e a stack oficial da Aura, servindo como o manifesto técnico para todo o time de engenharia.
+
+---
+
+## 1. UX de Excelência & Regras de Interface
+
+O ecossistema da Aura preza por uma experiência fluida, previsível e esteticamente premium:
+
+- **Code Splitting**: Roteamento baseado em carregamento sob demanda (`lazy load`) para baixar partes da aplicação apenas quando necessário, otimizando o carregamento inicial.
+- **Prefetching Estratégico**:
+  - `preload: 'always'`: Para módulos críticos de alta frequência (ex: Agenda, Pacientes).
+  - `preload: 'intent'`: Para módulos contextuais de uso secundário (ex: Prontuário/PEP, Financeiro).
+- **Inputs Bancários**: Componentes de formulário de texto formatado devem utilizar `react-hook-form` acoplado ao wrapper `Controller`. Isso impede a instabilidade do cursor do navegador durante a digitação de máscaras (ex: CPF, telefones) e assegura que apenas o valor limpo e higienizado seja submetido.
+- **App Shell e Login Minimalista**:
+  - A interface de entrada (Login) e a barra lateral de navegação (App Shell) banem ilustrações genéricas e poluição visual.
+  - A tela de login deve empregar um **Trust Footer** (indicadores de segurança e conformidade criptográfica como TLS e LGPD em texto puro e tom minimalista) focando no ritual de autenticação.
+- **Iconografia Estrita**: Uso exclusivo de ícones de contorno fino da biblioteca `lucide-react` em todas as telas para manter consistência e leveza.
+
+---
+
+## 2. Indicadores de Rede (Aura Cloud Status)
+
+O componente visual do status de rede indica a conectividade e integridade do ecossistema Aura. Ele é posicionado no App Shell (cabeçalho da barra lateral esquerda, próximo ao seletor de temas) e no rodapé do Login.
+
+O componente gerencia cinco estados distintos:
+- 🟢 **Aura Cloud (Online)**: Conexão ativa e direta com os nós de borda da nuvem (ícone de nuvem com checkmark).
+- 🔵 **Aura Sync (Sincronizando)**: Transmitindo dados locais de cache represados em background (setas circulares em rotação contínua).
+- ⚙️ **Aura LAN (Rede Local)**: Sem internet pública, mas conectado ativamente ao servidor ou VPN local da clínica (ícone de servidor rack).
+- 💾 **Aura Local (Dispositivo)**: Isolamento completo de rede; opera os dados puramente em armazenamento local do cliente (ícone de disco rígido ou laptop).
+- ⚠️ **Aura Erro (Falha)**: Queda de serviço ou erro de infraestrutura crítico (triângulo de alerta).
+
+*Comportamento do Tooltip*: Em visualizações de tela reduzida ou menu colapsado, o componente exibe apenas o ícone de status. Ao hover (mouse) ou touch (toque), abre um tooltip *glassmorphic* com suporte a fecho automático (auto-dismiss) ao clicar fora.
+
+---
+
+## 3. Stack Tecnológica Oficial
+
+A stack de desenvolvimento foi homologada para maximizar a performance fim a fim:
+
+- **Roteamento**: `TanStack Router` (rotas seguras e tipadas no cliente).
+- **Gestão de Estado**:
+  - **Estado do Servidor**: `TanStack Query` (React Query) para cache, re-fetch automático e invalidação de dados.
+  - **Estado do Cliente**: `Zustand` para gerenciar estados globais leves de UI de forma reativa.
+- **Formulários e Validação**: `React Hook Form` integrado ao `Zod` via resolvers, aplicando **Validação Dupla** (tanto no frontend antes do envio quanto no backend de forma defensiva).
+- **Comunicação API**: `Hono RPC Client` (ponte tipada compartilhada entre front e back).
+- **Visual & Design System**:
+  - **Identidade "Aura Platinada"**: Fundo zinc-50 (light), contraste zinc-850 (dark), e realces em Violeta (`#8b5cf6`), Rosa de Refração (`#ec4899`) e Platinado (`#e2e8f0`).
+  - **Tipografia**: Adoção da fonte `Geist Sans` (com `Inter` de fallback), com pesos leves (`font-light`) e espaçamentos horizontais expandidos (`tracking-wide`).
+- **Arquitetura de Documentação**: `Starlight (Astro)` utilizando **Island Architecture** para renderizar componentes de UI em React (como o componente `<Logo />` em SVG matemático) dentro dos arquivos Markdown.
+
+---
+
+## 4. Regras de Código e Independência de Nuvem
+
+- **Nomenclatura**: Todas as funções, variáveis, métodos e arquivos devem ser nomeados exclusivamente em inglês.
+- **Documentação de Código**: Comentários explicativos e docstrings devem ser escritos exclusivamente em inglês.
+- **Independência de Nuvem (Cloud-Agnostic)**: A aplicação não deve ficar restrita a APIs proprietárias de nuvem (ex: Cloudflare D1/KV). Todo o acesso ao banco de dados e controle de background deve ser encapsulado sob o **Repository Pattern**, garantindo que possamos rodar o microsserviço de backend em qualquer plataforma de nuvem (como containers Docker com PostgreSQL ou SQLite padrão).
