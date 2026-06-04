@@ -550,4 +550,47 @@ describe("Backend Authentication Router", () => {
       expect(data.code).toBe("JQ487");
     });
   });
+
+  describe("8. CORS Headers Verification", () => {
+    const corsEnv = {
+      ...env,
+      ALLOWED_ORIGINS: "https://app.clinicaexemplo.com.br,https://app-aura.2lp.in"
+    };
+
+    it("should return correct CORS headers for allowed origin", async () => {
+      const res = await app.request(
+        "/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Origin": "https://app.clinicaexemplo.com.br"
+          },
+          body: JSON.stringify({ username: "123.456.789-09", password: "senha123" })
+        },
+        corsEnv
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("access-control-allow-origin")).toBe("https://app.clinicaexemplo.com.br");
+      expect(res.headers.get("access-control-allow-credentials")).toBe("true");
+    });
+
+    it("should handle preflight OPTIONS requests for allowed origin", async () => {
+      const res = await app.request(
+        "/auth/login",
+        {
+          method: "OPTIONS",
+          headers: {
+            "Origin": "https://app-aura.2lp.in",
+            "Access-Control-Request-Method": "POST"
+          }
+        },
+        corsEnv
+      );
+      expect(res.status).toBe(204);
+      expect(res.headers.get("access-control-allow-origin")).toBe("https://app-aura.2lp.in");
+      expect(res.headers.get("access-control-allow-credentials")).toBe("true");
+      expect(res.headers.get("access-control-max-age")).toBe("86400");
+    });
+  });
 });

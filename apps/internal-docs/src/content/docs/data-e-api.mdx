@@ -71,11 +71,11 @@ Fila de contingência para registros cuja replicação assíncrona falhou.
 
 ## 3. Contratos de API (Hono RPC)
 
-Todos os endpoints da API são tipados e protegidos por isolamento de domínios via sub-roteadores. Qualquer chamada feita ao sub-roteador incorreto será rejeitada com código HTTP `403` no middleware raiz.
+Todos os endpoints da API são tipados e protegidos por isolamento de rotas e domínios via sub-roteadores. Qualquer chamada que viole as regras de domínio (`API_DOMAIN`) ou de caminho de diretório (`/auth` vs `/api`) será rejeitada com código HTTP `403` no middleware correspondente.
 
-### Sub-roteador: `/auth` (Restrito a `AUTH_DOMAIN`)
+### Sub-roteador: `/auth` (Restrito ao caminho `/auth` no `API_DOMAIN`)
 
-Gerencia a autenticação e tokens de sessão. Rejeita tráfego de fora do domínio de autenticação com o código de erro **`JQ487`**.
+Gerencia a autenticação e tokens de sessão. Rejeita tráfego fora do domínio da API ou fora do diretório de autenticação `/auth` com o código de erro **`JQ487`** (ou **`JQ487_PATH`** se o caminho não for correspondente).
 
 #### 1. `POST /auth/login`
 - **Payload de Entrada (JSON)**:
@@ -100,7 +100,7 @@ Gerencia a autenticação e tokens de sessão. Rejeita tráfego de fora do domí
     }
   }
   ```
-  - *Cookies*: Configura `refreshToken` em cookie HttpOnly, `Secure`, `SameSite=Strict` e com escopo limitado a `COOKIE_DOMAIN`.
+  - *Cookies*: Configura `refreshToken` em cookie HttpOnly, `Secure`, `SameSite=Strict` e com escopo limitado ao caminho `/auth` no domínio da API (`path: "/auth"`).
 
 #### 2. `POST /auth/refresh`
 - **Payload de Entrada**:
@@ -116,9 +116,9 @@ Gerencia a autenticação e tokens de sessão. Rejeita tráfego de fora do domí
 
 ---
 
-### Sub-roteador: `/api` (Restrito a `API_DOMAIN`)
+### Sub-roteador: `/api` (Restrito ao caminho `/api` no `API_DOMAIN`)
 
-Gerencia as operações clínicas do dia a dia. Rejeita acessos no domínio de autenticação com o código de erro **`JQ488`**.
+Gerencia as operações clínicas do dia a dia. Rejeita acessos fora do domínio da API com o código de erro **`JQ488`**.
 
 #### 1. `GET /api/patients`
 - **Descrição**: Retorna a lista de pacientes cadastrados no silo.

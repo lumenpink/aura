@@ -1,4 +1,5 @@
 import type { D1Database, KVNamespace } from '@cloudflare/workers-types';
+import type { DomainName, ViteApiUrl, AllowedOrigins } from '@aura/shared';
 
 /**
  * Environment bindings injected by Cloudflare Workers.
@@ -14,11 +15,12 @@ export interface Bindings {
   REVOCATION_KV?: KVNamespace;
   
   // Domain routing validations
-  API_DOMAIN: string;
+  API_DOMAIN: DomainName;
   
   // Security and routing variables
   JWT_SECRET?: string;
-  VITE_API_URL?: string;
+  VITE_API_URL?: ViteApiUrl;
+  ALLOWED_ORIGINS?: AllowedOrigins;
 }
 
 /**
