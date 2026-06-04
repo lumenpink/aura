@@ -12,6 +12,7 @@ export default defineConfig({
       sidebar: [
         { slug: 'arquitetura-monorepo' },
         { slug: 'seguranca-rotacao-tokens' },
+        { slug: 'seguranca-auth' },
         { slug: 'mapeamento-banco-d1' },
         { slug: 'data-e-api' },
         { slug: 'engenharia/sse-reatividade' },

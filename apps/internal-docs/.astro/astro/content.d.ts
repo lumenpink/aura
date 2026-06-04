@@ -194,6 +194,13 @@ declare module 'astro:content' {
   collection: "docs";
   data: InferEntrySchema<"docs">
 } & { render(): Render[".md"] };
+"seguranca-auth.mdx": {
+	id: "seguranca-auth.mdx";
+  slug: "seguranca-auth";
+  body: string;
+  collection: "docs";
+  data: InferEntrySchema<"docs">
+} & { render(): Render[".mdx"] };
 "seguranca-rotacao-tokens.md": {
 	id: "seguranca-rotacao-tokens.md";
   slug: "seguranca-rotacao-tokens";
