@@ -11,6 +11,7 @@ export default defineConfig({
       customCss: ['./src/styles/custom.css'],
       sidebar: [
         { slug: 'arquitetura-monorepo' },
+        { slug: 'infraestrutura' },
         { slug: 'seguranca-rotacao-tokens' },
         { slug: 'seguranca-auth' },
         { slug: 'mapeamento-banco-d1' },

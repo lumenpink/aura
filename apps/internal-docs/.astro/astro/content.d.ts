@@ -187,6 +187,13 @@ declare module 'astro:content' {
   collection: "docs";
   data: InferEntrySchema<"docs">
 } & { render(): Render[".mdx"] };
+"infraestrutura.mdx": {
+	id: "infraestrutura.mdx";
+  slug: "infraestrutura";
+  body: string;
+  collection: "docs";
+  data: InferEntrySchema<"docs">
+} & { render(): Render[".mdx"] };
 "mapeamento-banco-d1.md": {
 	id: "mapeamento-banco-d1.md";
   slug: "mapeamento-banco-d1";

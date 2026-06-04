@@ -1,0 +1,67 @@
+---
+title: Setup de Infraestrutura & Ambiente Local
+description: Guia de implantação dos Cloudflare Workers com Wrangler, espelhamento local e isolamento seguro de staging via VPN (Tailscale/Headscale).
+---
+
+Este documento serve como referência de infraestrutura para engenharia, descrevendo o setup do ambiente de execução local com Wrangler, o espelhamento do ecossistema de produção em silos locais, e as políticas de isolamento de staging por meio de redes privadas virtuais (VPN Mesh via Tailscale/Headscale).
+
+---
+
+## 1. Setup de Execução via Wrangler (Cloudflare Workers)
+
+O backend da Aura é implantado como microsserviços modulares em Cloudflare Workers utilizando a CLI do **Wrangler** para ciclo de vida de desenvolvimento e deploy:
+
+- **Desenvolvimento Local (`wrangler dev`)**: Executa o runtime do Worker localmente, emulando bindings de banco D1 e KV Namespace.
+- **Definições de Configurações (`wrangler.toml`)**: Localizado em `apps/backend/wrangler.toml`, mapeia bindings estáticos como bancos D1 e Namespaces de KV.
+- **Segredos locais (`.dev.vars`)**: Arquivo ignorado no git que armazena segredos de criptografia e variáveis dinâmicas (ex: `JWT_SECRET`, `AUTH_DOMAIN`, `API_DOMAIN`). No monorepo Aura, este arquivo é um link simbólico que aponta para o `.env.local` na raiz do projeto, mantendo as configurações centralizadas.
+
+### Comando Único de Start do Workspace
+Para rodar toda a topologia local (Frontend Vite + Backend Wrangler) de forma concorrente:
+```bash
+bun dev
+```
+
+---
+
+## 2. Espelhamento do Ambiente Local
+
+Para espelhar a produção localmente sem onerar a rede ou gerar custos, o monorepo Aura emula toda a infraestrutura na máquina de desenvolvimento:
+
+- **Persistência Relacional**: O Cloudflare D1 local roda em arquivos SQLite físicos salvos no diretório `.wrangler/state/v3/d1`.
+- **Roteamento de Subdomínios**: Mapeado por meio de túneis locais ou arquivos de hosts do sistema (`/etc/hosts` ou similar):
+  - `app-aura.2lp.in` -> Direcionado para o Vite na porta `12201`.
+  - `api-aura.2lp.in` -> Direcionado para o Wrangler na porta `12202`.
+  - `auth-aura.2lp.in` -> Direcionado para o Wrangler na porta `12202`.
+
+---
+
+## 3. Isolamento de Rede de Staging via VPN (Tailscale/Headscale)
+
+Para assegurar que o sistema seja **Cloud Agnostic** (independente de nuvem) e para isolar com segurança o ambiente de homologação (staging) sem expô-lo à internet pública, a Aura emprega uma rede privada mesh virtual baseada no protocolo **WireGuard** utilizando **Tailscale** (ou a alternativa auto-hospedada open-source **Headscale**):
+
+```mermaid
+graph TD
+    subgraph Internet Pública
+        DNS[DNS Público]
+    end
+
+    subgraph VPN Mesh Privada Tailscale / Headscale
+        Client[Dispositivo da Engenharia]
+        subgraph Servidor de Staging Staging Node
+            Worker[Hono Worker / Docker Container]
+            D1[D1 SQLite Database Proxy / Local D1]
+        end
+    end
+
+    Client -->|Autenticação Segura| Worker
+    Worker -->|Queries SQL| D1
+    DNS -.->|Sem resolução pública| Servidor de Staging
+```
+
+### Mecânica de Isolamento:
+1. **Zero Port Mapping Público**: Os servidores de staging e bancos de dados não possuem portas expostas diretamente para a internet e não possuem IPs públicos associados.
+2. **Acesso Mesh**: O nó do servidor de staging é registrado no controlador da VPN (Headscale/Tailscale). Apenas dispositivos autenticados na mesma chave da organização (como notebooks dos engenheiros) conseguem resolver a rota do host e se comunicar.
+3. **Decoupled Architecture (Cloud-Agnostic)**:
+   - Como nossa camada de persistência utiliza o **Repository Pattern** com Drizzle ORM, a aplicação é agnóstica em relação ao driver de banco.
+   - Em staging, em vez de depender de APIs proprietárias da Cloudflare, os Workers podem ser executados dentro de containers Docker na VPN privada (usando o Hono em runtime Node/Bun) conectando-se a bancos relacionais comuns (PostgreSQL/SQLite local).
+   - O tráfego de depuração e consultas de suporte ao Drizzle Studio ocorrem de forma 100% interna e protegida.
