@@ -18,10 +18,10 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configurar Node.js (Requisito Wrangler)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
 
       - name: Setup Bun Environment
         uses: oven-sh/setup-bun@v2
