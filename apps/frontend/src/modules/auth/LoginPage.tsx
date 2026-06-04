@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { loginSchema, type LoginCredentials } from '@aura/shared';
 import Logo from '../../components/brand/Logo';
 import CloudStatus from '../../components/brand/CloudStatus';
 import { useCloudStatus } from '../core/context/CloudStatusContext';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
   onLogin: (username: string) => void;
@@ -10,14 +13,37 @@ interface LoginPageProps {
   toggleTheme: () => void;
 }
 
+/**
+ * Formats a string to a standard CPF mask (999.999.999-99) in real-time,
+ * ensuring cursor stability and removing any non-digit characters.
+ */
+const formatCPF = (value: string): string => {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+};
+
 export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleTheme }) => {
   const { status } = useCloudStatus();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onLogin(username);
+  // Initialize react-hook-form with zod schema validation
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginCredentials>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      username: '',
+      password: '',
+    },
+  });
+
+  const onSubmit = (data: LoginCredentials) => {
+    // Passes the clean unmasked username (Zod schema strips formatting)
+    onLogin(data.username);
   };
 
   return (
@@ -31,7 +57,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleThem
         {theme === 'light' ? <Moon className="w-4.5 h-4.5 stroke-[1.5]" /> : <Sun className="w-4.5 h-4.5 stroke-[1.5]" />}
       </button>
 
-      {/* 1. Camada de Fundo (Ambient Light & Waves) */}
+      {/* 1. Background Layer (Ambient Light & Waves) */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] min-w-[500px] min-h-[500px] rounded-full bg-violet-500/[0.04] dark:bg-violet-500/[0.08] blur-[120px] transition-all duration-300" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] min-w-[500px] min-h-[500px] rounded-full bg-pink-500/[0.04] dark:bg-pink-500/[0.08] blur-[120px] transition-all duration-300" />
@@ -58,38 +84,72 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleThem
         </svg>
       </div>
 
-      {/* 2. Card de Login Cristalino */}
+      {/* 2. Crystalline Login Card */}
       <div className="w-full max-w-[420px] backdrop-blur-xl bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/50 rounded-3xl p-10 shadow-2xl dark:shadow-black/40 aura-glow transition-all duration-300">
         <div className="flex flex-col items-center mb-8 text-center">
           <Logo orientation="vertical" size="large" />
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
+          {/* CPF Username Input */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 ml-1">Usuário</label>
-            <input
-              type="text"
-              required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="000.000.000-00"
-              className="w-full bg-zinc-50/50 dark:bg-zinc-950/50 border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl px-4 py-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-aura-violet focus:border-aura-violet transition-all duration-200 text-zinc-900 dark:text-zinc-100 placeholder-zinc-450 dark:placeholder-zinc-650"
+            <Controller
+              name="username"
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  type="text"
+                  placeholder="000.000.000-00"
+                  onChange={(e) => {
+                    const formatted = formatCPF(e.target.value);
+                    field.onChange(formatted);
+                  }}
+                  className={`w-full bg-zinc-50/50 dark:bg-zinc-950/50 border ${
+                    errors.username 
+                      ? 'border-red-500 dark:border-red-500 focus:ring-red-500 focus:border-red-500' 
+                      : 'border-zinc-200/60 dark:border-zinc-800/60 focus:ring-aura-violet focus:border-aura-violet'
+                  } rounded-xl px-4 py-3 text-sm focus:outline-hidden focus:ring-1 transition-all duration-200 text-zinc-900 dark:text-zinc-100 placeholder-zinc-450 dark:placeholder-zinc-650`}
+                />
+              )}
             />
+            {errors.username && (
+              <span className="text-[10px] text-red-500 dark:text-red-400 ml-1 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {errors.username.message}
+              </span>
+            )}
           </div>
 
+          {/* Password Input */}
           <div className="flex flex-col gap-1.5">
             <div className="flex justify-between items-center px-1">
               <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Senha de acesso</label>
               <a href="#forgot" className="text-[10px] text-aura-violet dark:text-violet-400 hover:underline">Esqueceu a senha?</a>
             </div>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••••"
-              className="w-full bg-zinc-50/50 dark:bg-zinc-950/50 border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl px-4 py-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-aura-violet focus:border-aura-violet transition-all duration-200 text-zinc-900 dark:text-zinc-100 placeholder-zinc-450 dark:placeholder-zinc-650"
+            <Controller
+              name="password"
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  type="password"
+                  placeholder="••••••••••••"
+                  className={`w-full bg-zinc-50/50 dark:bg-zinc-950/50 border ${
+                    errors.password 
+                      ? 'border-red-500 dark:border-red-500 focus:ring-red-500 focus:border-red-500' 
+                      : 'border-zinc-200/60 dark:border-zinc-800/60 focus:ring-aura-violet focus:border-aura-violet'
+                  } rounded-xl px-4 py-3 text-sm focus:outline-hidden focus:ring-1 transition-all duration-200 text-zinc-900 dark:text-zinc-100 placeholder-zinc-450 dark:placeholder-zinc-650`}
+                />
+              )}
             />
+            {errors.password && (
+              <span className="text-[10px] text-red-500 dark:text-red-400 ml-1 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {errors.password.message}
+              </span>
+            )}
           </div>
 
           <button
@@ -101,8 +161,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, theme, toggleThem
         </form>
       </div>
 
-      {/* 3. Rodapé de Segurança (Aura Cloud Status Indicator Component) */}
-      <footer className="absolute bottom-6 left-6 right-6 flex justify-center select-none transition-all duration-300">
+      {/* 3. Rodapé de Segurança (Trust Footer & Cloud Status) */}
+      <footer className="absolute bottom-6 left-6 right-6 flex flex-col items-center gap-3 select-none text-[10px] text-zinc-400 dark:text-zinc-500 tracking-wide font-light transition-all duration-300">
+        <div className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2">
+          <span>Conexão de ponta a ponta criptografada via TLS 1.3</span>
+          <span className="hidden sm:inline text-zinc-350 dark:text-zinc-800">•</span>
+          <span>Em conformidade com a LGPD</span>
+        </div>
         <CloudStatus status={status} showText={true} />
       </footer>
     </div>
