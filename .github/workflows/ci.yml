@@ -1,0 +1,49 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci:
+    name: Lint, Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js (Requisito Wrangler)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Bun Environment
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Audit Dependencies
+        run: bun x audit
+
+      - name: Run Code Quality Checks (Biome)
+        run: bun x biome check .
+
+      - name: Check TypeScript Syntax
+        run: bun x tsc --noEmit
+
+      - name: Run Unit & Integration Tests/Coverage
+        run: bun test --coverage --coverage-threshold=85
+
+      - name: Verify Frontend Compilation
+        run: bun --cwd apps/frontend run build
+
+      - name: Verify PDF Documentation Compilation
+        run: bun run pdf:docs
