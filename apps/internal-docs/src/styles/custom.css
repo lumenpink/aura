@@ -42,3 +42,250 @@
   letter-spacing: 0.15em;
   text-transform: uppercase;
 }
+
+/* --- Floating PDF Button & Print Styles Override --- */
+
+.floating-pdf-btn {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.15rem;
+  font-family: var(--sl-font-sans), sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--sl-color-text);
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 9999px;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(12px) saturate(190%);
+  -webkit-backdrop-filter: blur(12px) saturate(190%);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root[data-theme='dark'] .floating-pdf-btn {
+  background: rgba(15, 15, 18, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.floating-pdf-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 35px rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.4);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme='dark'] .floating-pdf-btn:hover {
+  box-shadow: 0 14px 35px rgba(167, 139, 250, 0.12);
+  border-color: rgba(167, 139, 250, 0.4);
+  background: rgba(20, 20, 25, 0.9);
+}
+
+.floating-pdf-btn:active {
+  transform: translateY(-1px);
+}
+
+.floating-pdf-btn svg {
+  stroke: var(--sl-color-accent);
+  transition: transform 0.3s ease;
+}
+
+.floating-pdf-btn:hover svg {
+  transform: scale(1.1);
+}
+
+@media print {
+  /* Hide all interactive/navigation UI structures in Starlight */
+  header,
+  .sidebar,
+  .sidebar-pane,
+  aside,
+  .right-sidebar,
+  .right-sidebar-pane,
+  footer,
+  .pagination,
+  .floating-pdf-btn,
+  .site-search,
+  .mobile-preferences,
+  .pagefind-ui,
+  site-search,
+  .actions,
+  button {
+    display: none !important;
+  }
+  
+  /* Reset general page layout rules and force light theme colors */
+  :root, :root[data-theme='dark'], html, body {
+    color-scheme: light !important;
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #18181b !important;
+    --sl-color-bg: #ffffff !important;
+    --sl-color-text: #18181b !important;
+    --sl-color-text-invert: #ffffff !important;
+    --sl-color-accent: #7c3aed !important;
+    --sl-color-accent-high: #6d28d9 !important;
+    --sl-color-accent-low: #f5f3ff !important;
+    --sl-color-gray-1: #18181b !important;
+    --sl-color-gray-2: #27272a !important;
+    --sl-color-gray-3: #52525b !important;
+    --sl-color-gray-4: #a1a1aa !important;
+    --sl-color-gray-5: #d4d4d8 !important;
+    --sl-color-gray-6: #f4f4f5 !important;
+    --sl-color-hairline: #e4e4e7 !important;
+    --sl-color-hairline-light: #f4f4f5 !important;
+    --sl-color-bg-sidebar: #ffffff !important;
+    --sl-color-bg-nav: #ffffff !important;
+    --sl-color-bg-inline-code: #f4f4f5 !important;
+    --sl-color-orange-low: #fff7ed !important;
+    --sl-color-green-low: #f0fdf4 !important;
+    --sl-color-blue-low: #eff6ff !important;
+    --sl-color-red-low: #fef2f2 !important;
+  }
+
+  /* Force light colors even under dark mode preference when printing */
+  @media (prefers-color-scheme: dark) {
+    :root, :root[data-theme='dark'], html, body {
+      color-scheme: light !important;
+      background-color: #ffffff !important;
+      background: #ffffff !important;
+      color: #18181b !important;
+      --sl-color-bg: #ffffff !important;
+      --sl-color-text: #18181b !important;
+      --sl-color-bg-sidebar: #ffffff !important;
+      --sl-color-bg-nav: #ffffff !important;
+    }
+  }
+
+  body, 
+  html {
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 11pt !important;
+  }
+
+  /* Make sure all Starlight container elements are transparent in print */
+  .page, .main-frame, .main-pane, .sl-container, .content-panel, .chapter-content, .document-chapter {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+
+  /* Print styling for code block backgrounds */
+  pre, code, .expressive-code {
+    background-color: #f8f8f8 !important;
+    background: #f8f8f8 !important;
+  }
+
+  /* Make sure main content container takes 100% space */
+  .main-frame,
+  .main-pane,
+  main,
+  .content-panel,
+  .content-panel + .content-panel,
+  .page,
+  .sl-container,
+  article {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Complete Border and Shadow Reset for Layout Elements to remove default black outlines */
+  *:not(table):not(th):not(td):not(tr):not(pre):not(code):not(hr):not(blockquote):not(.mermaid-container):not(.mermaid):not(svg):not(path):not(ellipse):not(line):not(polygon):not(polyline):not(rect):not(circle):not(g) {
+    border: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  
+  /* Revert borders for content-specific elements */
+  table, th, td, tr, pre, code, hr, blockquote, .mermaid-container, .mermaid {
+    border: 1px solid #e4e4e7 !important;
+  }
+
+  /* Reset main pane margins */
+  .main-pane {
+    margin-inline-start: 0 !important;
+  }
+
+  /* Page setup for A4 printing */
+  @page {
+    size: A4 portrait;
+    margin: 20mm 15mm 20mm 15mm;
+  }
+
+  /* Keep colors and backgrounds clean for printing */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Prevent awkward page breaks */
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    break-after: avoid;
+    color: #000 !important;
+  }
+  
+  img, pre, blockquote, table, tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+/* Brand Hero Card for Index Pages */
+.brand-hero-card {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 3rem 2rem !important;
+  margin: 2.5rem auto !important;
+  background: rgba(9, 9, 11, 0.02) !important;
+  border: 1px solid rgba(9, 9, 11, 0.05) !important;
+  border-radius: 1.5rem !important;
+  max-width: 500px !important;
+}
+
+:root[data-theme='dark'] .brand-hero-card {
+  background: rgba(255, 255, 255, 0.02) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.brand-hero-card img {
+  width: 120px !important;
+  height: 120px !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.brand-hero-card span {
+  font-size: 1.4rem !important;
+  font-weight: 300 !important;
+  letter-spacing: 0.35em !important;
+  color: var(--sl-color-accent) !important;
+}
+
+.brand-hero-text {
+  font-size: 0.75rem !important;
+  color: var(--sl-color-gray-3) !important;
+  margin-top: 1.5rem !important;
+  letter-spacing: 0.18em !important;
+  text-transform: uppercase !important;
+  text-align: center !important;
+  font-weight: 500 !important;
+}
+

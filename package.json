@@ -12,7 +12,8 @@
     "test": "bun test",
     "test:shared": "bun test test/shared",
     "test:backend": "bun test test/backend",
-    "test:frontend": "bun test test/frontend"
+    "test:frontend": "bun test test/frontend",
+    "pdf:docs": "bun run scripts/generate-pdf.ts"
   },
   "dependencies": {
     "autoprefixer": "^10.5.0",
