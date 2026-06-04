@@ -9,7 +9,7 @@ on:
       - main
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   ci:
@@ -22,8 +22,6 @@ jobs:
 
       - name: Configurar Node.js (Requisito Wrangler)
         uses: actions/setup-node@v4
-        with:
-          node-version: '22'
 
       - name: Setup Bun Environment
         uses: oven-sh/setup-bun@v2
