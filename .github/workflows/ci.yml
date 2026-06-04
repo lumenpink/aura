@@ -31,19 +31,26 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Audit Dependencies
-        run: bun x audit
+        run: bun audit --audit-level=critical
 
       - name: Run Code Quality Checks (Biome)
         run: bun x biome check .
 
-      - name: Check TypeScript Syntax
-        run: bun x tsc --noEmit
+      - name: Verify TypeScript Types (Root & Scripts)
+        run: bunx tsc --noEmit
+
+      - name: Verify TypeScript Types (Shared Package)
+        run: bunx tsc --noEmit --project packages/shared/tsconfig.json
+
+      - name: Verify TypeScript Types (Backend)
+        run: bunx tsc --noEmit --project apps/backend/tsconfig.json
 
       - name: Run Unit & Integration Tests/Coverage
         run: bun test --coverage --coverage-threshold=85
 
       - name: Verify Frontend Compilation
-        run: bun --cwd apps/frontend run build
+        run: bun run --cwd apps/frontend build
 
       - name: Verify PDF Documentation Compilation
         run: bun run pdf:docs
+
