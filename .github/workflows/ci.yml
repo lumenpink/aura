@@ -43,14 +43,29 @@ jobs:
       - name: Verify TypeScript Types (Shared Package)
         run: bunx tsc --noEmit --project packages/shared/tsconfig.json
 
-      - name: Verify TypeScript Types (Backend)
-        run: bunx tsc --noEmit --project apps/backend/tsconfig.json
+      - name: Verify TypeScript Types (UI Package)
+        run: bunx tsc --noEmit --project packages/ui/tsconfig.json
+
+      - name: Verify TypeScript Types (Fluxo Backend)
+        run: bunx tsc --noEmit --project apps/fluxo-backend/tsconfig.json
+
+      - name: Verify TypeScript Types (Traço Backend)
+        run: bunx tsc --noEmit --project apps/traco-backend/tsconfig.json
+
+      - name: Verify TypeScript Types (Pulso Backend)
+        run: bunx tsc --noEmit --project apps/pulso-backend/tsconfig.json
 
       - name: Run Unit & Integration Tests/Coverage
         run: bun test --coverage --coverage-threshold=85
 
-      - name: Verify Frontend Compilation
-        run: bun run --cwd apps/frontend build
+      - name: Verify Fluxo Frontend Compilation
+        run: bun run --cwd apps/fluxo-frontend build
+
+      - name: Verify Traço Frontend Compilation
+        run: bun run --cwd apps/traco-frontend build
+
+      - name: Verify Pulso Frontend Compilation
+        run: bun run --cwd apps/pulso-frontend build
 
       - name: Verify PDF Documentation Compilation
         run: bun run pdf:docs
