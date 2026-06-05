@@ -145,7 +145,7 @@ describe("HttpClient", () => {
   const setupMockFetch = (handlers: {
     onRequest?: (url: string, init?: RequestInit) => Response | Promise<Response>;
   }) => {
-    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (input: any, init?: any) => {
       const url = typeof input === "string" ? input : input.toString();
       fetchMockCalls.push({ url, init });
 
@@ -154,7 +154,7 @@ describe("HttpClient", () => {
       }
 
       return new Response("OK", { status: 200 });
-    };
+    }) as any;
   };
 
   it("should send access token in Authorization header", async () => {
