@@ -13,7 +13,7 @@ O backend da Aura é implantado como microsserviços modulares em Cloudflare Wor
 
 - **Desenvolvimento Local (`wrangler dev`)**: Executa o runtime do Worker localmente, emulando bindings de banco D1 e KV Namespace.
 - **Definições de Configurações (`wrangler.toml`)**: Localizado em `apps/backend/wrangler.toml`, mapeia bindings estáticos como bancos D1 e Namespaces de KV.
-- **Segredos de desenvolvimento (`.env.local`)**: Arquivo ignorado no git na raiz do projeto que armazena segredos de criptografia e variáveis dinâmicas (ex: `JWT_SECRET`, `API_DOMAIN`). O Bun lê este arquivo nativamente e injeta as variáveis no processo de execução do Wrangler, mantendo as configurações centralizadas.
+- **Segredos de desenvolvimento (`.env.local`)**: Arquivo ignorado no git na raiz do projeto que armazena segredos de criptografia e variáveis dinâmicas (ex: `JWT_SECRET`, `API_DOMAIN`). O Bun lê este arquivo nativamente e injeta as variáveis no processo de execução do Wrangler, mantendo as configurações centralizadas. Permite mapear opcionalmente domínios públicos para cada serviço (ex: `VITE_FLUXO_API_URL` e `ALLOWED_ORIGINS_FLUXO`). Se ausentes ou vazias, caem automaticamente nos valores localhost descritos abaixo.
 
 ### Comando Único de Start do Workspace
 Para rodar toda a topologia local (Frontend Vite + Backend Wrangler) de forma concorrente:
@@ -28,16 +28,16 @@ bun dev
 Para espelhar a produção localmente sem onerar a rede ou gerar custos, o monorepo Aura emula toda a infraestrutura na máquina de desenvolvimento:
 
 - **Persistência Relacional**: O Cloudflare D1 local de cada backend roda em seus arquivos SQLite físicos correspondentes salvos nos respectivos diretórios `.wrangler/state/v3/d1` sob a pasta de cada aplicativo.
-- **Roteamento de Domínios Locais**: Mapeado por meio de portas ou mapeamento de hosts locais (`localhost`):
+- **Roteamento de Domínios e Fallbacks**: Mapeado por meio de portas ou mapeamento de hosts locais (`localhost`), sendo opcionalmente configuráveis via variáveis com tipagem estrita no Zod (`envSchema`):
   - **Aura Fluxo**:
-    - Frontend: `fluxo.localhost:12201` (porta do Vite `12201`)
-    - API Backend: `fluxo-api.localhost:12202` (porta do Wrangler `12202`)
+    - Frontend: `fluxo.localhost:12201` (Customizável por `ALLOWED_ORIGINS_FLUXO`)
+    - API Backend: `fluxo-api.localhost:12202` (Customizável por `VITE_FLUXO_API_URL`)
   - **Aura Traço**:
-    - Frontend: `traco.localhost:12301` (porta do Vite `12301`)
-    - API Backend: `traco-api.localhost:12302` (porta do Wrangler `12302`)
+    - Frontend: `traco.localhost:12301` (Customizável por `ALLOWED_ORIGINS_TRACO`)
+    - API Backend: `traco-api.localhost:12302` (Customizável por `VITE_TRACO_API_URL`)
   - **Aura Pulso**:
-    - Frontend: `pulso.localhost:12401` (porta do Vite `12401`)
-    - API Backend: `pulso-api.localhost:12402` (porta do Wrangler `12402`)
+    - Frontend: `pulso.localhost:12401` (Customizável por `ALLOWED_ORIGINS_PULSO`)
+    - API Backend: `pulso-api.localhost:12402` (Customizável por `VITE_PULSO_API_URL`)
 
 ---
 

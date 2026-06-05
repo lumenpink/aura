@@ -11,8 +11,11 @@ export class HttpClient {
   private refreshPromise: Promise<string> | null = null;
 
   constructor(baseUrl?: string) {
-    // Determine base URL, favoring constructor param, then import.meta.env, then empty string
-    this.baseUrl = baseUrl || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '';
+    // Determine base URL, favoring constructor param, then Fluxo-specific, then generic VITE_API_URL, falling back to localhost dev backend
+    const envApiUrl = typeof import.meta !== 'undefined' 
+      ? (import.meta.env?.VITE_FLUXO_API_URL || import.meta.env?.VITE_API_URL)
+      : undefined;
+    this.baseUrl = baseUrl || envApiUrl || 'http://fluxo-api.localhost:12202';
     
     // Initialize BroadcastChannel if available in the global scope
     if (typeof BroadcastChannel !== 'undefined') {

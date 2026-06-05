@@ -24,6 +24,7 @@ export interface Bindings {
   JWT_SECRET?: string;
   VITE_API_URL?: ViteApiUrl;
   ALLOWED_ORIGINS?: AllowedOrigins;
+  ALLOWED_ORIGINS_FLUXO?: AllowedOrigins;
 }
 
 /**

@@ -7,16 +7,17 @@ type Bindings = {
   D1_MAIN?: any;
   REVOCATION_KV?: any;
   ALLOWED_ORIGINS?: string;
+  ALLOWED_ORIGINS_TRACO?: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Global CORS Middleware with strict origin check and preflight optimization
 app.use('*', async (c, next) => {
-  const allowedRaw = c.env.ALLOWED_ORIGINS || '';
+  const allowedRaw = c.env.ALLOWED_ORIGINS_TRACO || c.env.ALLOWED_ORIGINS || '';
   const parsedOrigins = allowedOriginsSchema.safeParse(allowedRaw);
-  const allowed = parsedOrigins.success ? parsedOrigins.data : '';
-  const allowedOrigins = allowed ? allowed.split(',').map(o => o.trim()) : [];
+  const allowed = parsedOrigins.success ? parsedOrigins.data : 'http://traco.localhost:12301';
+  const allowedOrigins = allowed.split(',').map(o => o.trim());
 
   const origin = c.req.header('Origin');
   if (origin && !allowedOrigins.includes(origin)) {
