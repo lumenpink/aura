@@ -279,26 +279,77 @@ export async function generatePrescriptionPdf(
 
 ## 5. Comunicação Inter-serviços (M2M - HTTP)
 
-Como o Aura Pulso opera de forma isolada, no momento de criar uma receita, o médico precisa puxar os dados demográficos do paciente cadastrado na base clínica principal (Aura Fluxo) sem que o paciente precise redigitá-los. 
+Como o Aura Pulso opera de forma isolada, no momento de criar uma receita, o médico precisa obter os dados demográficos do paciente cadastrado na base clínica principal (Aura Fluxo) sem que o paciente precise redigitá-los. 
 
-A comunicação ocorre de forma cross-origin via API HTTP M2M (Machine-to-Machine) estritamente criptografada.
+A comunicação ocorre de forma cross-origin via API HTTP M2M (Machine-to-Machine) estritamente autenticada e protegida contra vulnerabilidades de **BOLA (Broken Object Level Authorization)** e **IDOR**. Apenas a validação de assinatura da máquina não é suficiente: o Fluxo exige que o token comprove o contexto do silo (clínica) e do médico que iniciou a ação.
 
 ```mermaid
 sequenceDiagram
     participant Pulso as Aura Pulso (Workers Backend)
     participant Fluxo as Aura Fluxo (Workers Backend)
+    participant Cache as Cloudflare Cache (Fluxo Edge)
     
-    Pulso->>Pulso: Gera Token JWT M2M temporário
-    Pulso->>Fluxo: GET /api/external/patients/98765432100
-    Note over Pulso, Fluxo: Headers: Authorization: Bearer <JWT_M2M>
-    Fluxo->>Fluxo: Valida Assinatura do JWT usando chave pública do Pulso
-    Fluxo-->>Pulso: Retorna JSON com dados demográficos (Nome, Nascimento)
+    Pulso->>Pulso: 1. Gera Token JWT M2M temporário<br/>(com kid no header e claims no payload)
+    Pulso->>Fluxo: 2. GET /api/external/patients/98765432100 (Bearer <JWT>)
+    
+    rect rgb(30, 20, 40)
+        Note over Fluxo, Cache: Resolução da Chave Pública (JWKS)
+        Fluxo->>Cache: 3. Consulta caches.default.match('https://pulso-api.localhost:12402/auth/jwks')
+        alt Cache Miss
+            Cache-->>Fluxo: Retorna null
+            Fluxo->>Pulso: 4. HTTP GET /auth/jwks
+            Pulso-->>Fluxo: Retorna JWKS (RFC 7517)
+            Fluxo->>Cache: 5. caches.default.put(...) com TTL longo (ex: 24h)
+        else Cache Hit
+            Cache-->>Fluxo: Retorna JWKS do cache local (sub-1ms)
+        end
+    end
+
+    Fluxo->>Fluxo: 6. Valida assinatura do JWT com a chave pública (kid)<br/>7. Extrai claims de contexto (tenant_id)
+    Fluxo->>Fluxo: 8. Consulta D1 (WHERE cpf = ? AND tenant_id = ?)
+    alt Sucesso (Paciente encontrado no Silo)
+        Fluxo-->>Pulso: Retorna 200 OK (Nome, Nascimento)
+    else Falha / Inexistente / Outro Silo
+        Fluxo-->>Pulso: Retorna 403 Forbidden (JQ490_TENANT_MISMATCH)
+    end
 ```
 
 ### Contrato de Comunicação
 * **Endpoint de Consulta (Aura Fluxo)**: `GET /api/external/patients/:cpf`
 * **Autenticação**: Cabeçalho `Authorization: Bearer <M2M_JWT_TOKEN>`
-  - O JWT é assinado por chave privada do Worker do Aura Pulso. O Aura Fluxo conhece a chave pública do Pulso e valida a autenticidade e o tempo de validade do token (expira em 30 segundos).
+
+#### Nova Estrutura do Payload do JWT (Claims de Contexto)
+O JWT gerado pelo Pulso deve incluir obrigatoriamente as seguintes claims:
+- `iss`: Identificador do emissor (`"aura-pulso"`).
+- `aud`: Identificador da audiência (`"aura-fluxo"`).
+- `tenant_id`: O identificador único do silo/clínica de origem da requisição.
+- `doctor_cpf`: O CPF do médico prescritor autenticado no momento da requisição.
+- `scope`: O escopo de autorização (`"read:patient_demographics"`).
+- `exp`: Unix Epoch indicando a expiração do token (máximo 30 segundos após geração).
+
+#### Distribuição de Chaves via JWKS Dinâmico (RFC 7517)
+Para evitar o acoplamento de segredos compartilhados e facilitar a rotação de chaves criptográficas:
+1. **Aura Pulso**: O backend expõe o endpoint público `GET /auth/jwks`, que retorna o conjunto de chaves públicas ativas estruturado no padrão JWKS (RFC 7517):
+   ```json
+   {
+     "keys": [
+       {
+         "kty": "RSA",
+         "use": "sig",
+         "alg": "RS256",
+         "kid": "pulso-key-active-01",
+         "n": "u1W_zN3rX...",
+         "e": "AQAB"
+       }
+     ]
+   }
+   ```
+2. **Aura Fluxo**: Para validar a assinatura do JWT enviado na requisição M2M, o Fluxo lê o cabeçalho `kid` (Key ID) do token e resolve a respectiva chave pública consultando o endpoint JWKS do Pulso.
+3. **Estratégia de Caching de Borda via Cache API**:
+   - É **proibido** efetuar requisições de rede ao endpoint JWKS a cada chamada da API para evitar latências severas de rede e gargalo de tráfego.
+   - O backend do Fluxo utiliza a **Cloudflare Cache API nativa (`caches.default`)** para interceptar e armazenar em cache a resposta HTTP do JWKS da rota `https://pulso-api.localhost:12402/auth/jwks`.
+   - A resposta do JWKS do Pulso deve conter cabeçalhos HTTP de controle de cache adequados (ex: `Cache-Control: public, max-age=86400, s-maxage=86400` para cachear por 24 horas).
+   - O Fluxo tenta ler do cache local usando `await caches.default.match(jwksUrl)`. Apenas se houver um cache miss, realiza a consulta HTTP real ao Pulso e atualiza a chave no cache usando `await caches.default.put(...)`.
 
 #### Cabeçalho HTTP de Requisição
 ```http
@@ -309,26 +360,36 @@ X-Aura-Source-Service: pulso-backend
 Accept: application/json
 ```
 
-#### Resposta HTTP de Sucesso (200 OK)
-```json
-{
-  "cpf": "12345678901",
-  "name": "Maria Oliveira Souza",
-  "birthdate": "1992-04-12",
-  "gender": "F",
-  "metadata": {
-    "lastSync": "2026-06-05T03:00:00Z"
-  }
-}
-```
+### Mecânica de Validação Estrita no Aura Fluxo
+Ao receber a chamada na rota `GET /api/external/patients/:cpf`, o backend do Aura Fluxo executa obrigatoriamente as seguintes etapas de validação:
+1. **Resolução de Chave**: Identifica o `kid` no cabeçalho do token e recupera a chave pública do cache JWKS (conforme a política detalhada na seção anterior).
+2. **Verificação do Token**: Valida a assinatura do JWT usando a chave pública ativa, a audiência (`aud === "aura-fluxo"`), a expiração (`exp`), e se possui o escopo adequado (`scope === "read:patient_demographics"`).
+3. **Extração de Tenant**: Extrai a claim `tenant_id` de dentro do payload do token.
+4. **Isolamento de Silo em Banco de Dados (D1)**: Injeta obrigatoriamente o `tenant_id` recuperado do token na cláusula do banco de dados D1 para assegurar o isolamento do tenant.
+   ```sql
+   -- Exemplo de execução forçada do Drizzle ORM
+   SELECT * FROM patients WHERE cpf = ? AND tenant_id = ?;
+   ```
 
-#### Resposta de Erro / Acesso Proibido (403 Forbidden)
-Se o token JWT estiver expirado, inválido ou a assinatura não coincidir com a chave confiada:
+### Atualização de Códigos de Erro de Acesso
+
+#### 1. Resposta de Erro / Acesso Proibido (403 Forbidden - Token Inválido)
+Se o token JWT estiver expirado, com assinatura inválida, sem escopo, ou com emissor incorreto:
 ```json
 {
   "error": "Acesso não autorizado",
   "code": "JQ489_UNAUTHORIZED_M2M",
   "message": "Token de assinatura de máquina inválido ou expirado"
+}
+```
+
+#### 2. Resposta de Erro / Incompatibilidade de Silo (403 Forbidden - Tenant Mismatch)
+Caso o paciente não pertença ao `tenant_id` informado no JWT (ou o `tenant_id` seja inválido), a API do Fluxo **não deve retornar 404** (evitando ataques de enumeração para confirmar se o CPF pertence a outras clínicas da plataforma). A API deve retornar **403 Forbidden** com o código específico **`JQ490_TENANT_MISMATCH`**:
+```json
+{
+  "error": "Incompatibilidade de silo",
+  "code": "JQ490_TENANT_MISMATCH",
+  "message": "O recurso solicitado não pertence ao tenant autenticado"
 }
 ```
 
