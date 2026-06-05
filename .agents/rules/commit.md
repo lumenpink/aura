@@ -4,6 +4,8 @@ trigger: always_on
 
 # Git Commit Rules
 
+DO NOT COMMIT BY YOURSELF
+
 ## Scope
 When generating git commit messages, you must only analyze changes that are staged (equivalent to `git diff --cached`). Ignore any unstaged modifications in the working directory.
 
