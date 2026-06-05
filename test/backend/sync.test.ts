@@ -180,7 +180,7 @@ describe("CQRS Eventual Consistency via R2 & Scheduled Cron", () => {
     const keys = Array.from(r2Bucket.store.keys());
     expect(keys[0]).toStartWith("queue/appointment_appt-123_");
 
-    const payload = JSON.parse(r2Bucket.store.get(keys[0])!);
+    const payload = JSON.parse(r2Bucket.store.get(keys[0]!)!);
     expect(payload.entityName).toBe("Appointment");
     expect(payload.data.id).toBe("appt-123");
     expect(payload.data.patientName).toBe("John Doe");

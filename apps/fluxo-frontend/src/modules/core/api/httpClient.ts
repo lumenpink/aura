@@ -169,7 +169,7 @@ export class HttpClient {
         this.channel!.removeEventListener('message', listener);
       };
 
-      const listener = (event: MessageEvent) => {
+      const listener = (event: any) => {
         const msg = event.data as RefreshMessage;
         if (msg.type === 'REFRESH_SUCCESS' && msg.accessToken) {
           cleanUp();

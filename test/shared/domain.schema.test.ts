@@ -5,7 +5,9 @@ describe("domainSchema", () => {
   it("should validate a correct simple domain", () => {
     const res = domainSchema.safeParse("clinicaexemplo.com.br");
     expect(res.success).toBe(true);
-    expect(res.data).toBe("clinicaexemplo.com.br");
+    if (res.success) {
+      expect(res.data as string).toBe("clinicaexemplo.com.br");
+    }
   });
 
   it("should validate a correct subdomain", () => {
