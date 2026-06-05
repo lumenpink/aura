@@ -77,6 +77,48 @@ Fila de contingência para registros cuja replicação assíncrona falhou.
 | `error` | `text()` | `TEXT` | Não Nulo (Stack trace ou mensagem de erro capturada) |
 | `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data do incidente) |
 
+### Tabela: `prescriptions` (Aura Pulso)
+Registros de receitas médicas emitidas.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `doctor_cpf` | `text()` | `TEXT` | Não Nulo (CPF do médico emissor) |
+| `patient_name` | `text()` | `TEXT` | Não Nulo (nome do paciente) |
+| `patient_cpf` | `text()` | `TEXT` | Não Nulo (CPF do paciente) |
+| `content` | `text()` | `TEXT` | Não Nulo (JSON de itens e posologias) |
+| `previous_hash` | `text()` | `TEXT` | Não Nulo (hash da linha anterior do mesmo silo) |
+| `current_hash` | `text()` | `TEXT` | Não Nulo (hash SHA-256 da linha atual) |
+| `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de criação) |
+
+### Tabela: `prescription_validity_logs` (Aura Pulso)
+Logs históricos de status de validade e controle das receitas.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `prescription_id` | `text()` | `TEXT` | Não Nulo (chave estrangeira de `prescriptions`) |
+| `status` | `text()` | `TEXT` | Não Nulo (valores comuns: `ATIVO`, `REVOGADO`, `EXPIRADO`) |
+| `previous_hash` | `text()` | `TEXT` | Não Nulo (hash da linha anterior do log de validade) |
+| `current_hash` | `text()` | `TEXT` | Não Nulo (hash SHA-256 da linha atual) |
+| `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data do evento) |
+
+### Tabela: `clinical_evolutions` (Aura Fluxo)
+Evoluções médicas e anotações clínicas do paciente no prontuário eletrônico.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `patient_id` | `text()` | `TEXT` | Não Nulo (chave estrangeira do paciente) |
+| `doctor_cpf` | `text()` | `TEXT` | Não Nulo (CPF do médico autor) |
+| `notes` | `text()` | `TEXT` | Não Nulo (texto clínico da evolução) |
+| `previous_hash` | `text()` | `TEXT` | Não Nulo (hash da linha anterior de evolução deste paciente) |
+| `current_hash` | `text()` | `TEXT` | Não Nulo (hash SHA-256 da linha atual) |
+| `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de inserção da evolução) |
+
 ---
 
 ## 3. Contratos de API (Hono RPC)
@@ -204,4 +246,163 @@ Caso o suporte de gravação em ambiente offline (intranet local na clínica ou 
   * **Fluxo Append-Only (Adição Contínua)**: Não existe operação de `UPDATE` sobre a evolução clínica de prontuários salvos. Qualquer alteração ou correção pós-salvamento deve ser registrada exclusivamente como um **Adendo** ou **Retificação** em um novo bloco.
   * **Resolução de Conflitos Offline**: Em caso de escritas concorrentes offline no mesmo prontuário, o sistema de sincronização deve anexar ambas as versões integralmente como registros independentes e separados, contendo carimbos de data/hora (timestamps), identificação de autoria (CRM e assinatura digital do médico correspondente) e metadados distintos. A interpretação clínica das evoluções conflitantes cabe estritamente à equipe médica.
   * **Campos Mutáveis Permitidos**: Apenas campos de controle de assinatura digital (como status de assinatura e o payload de metadados da assinatura ICP-Brasil) podem sofrer alterações pontuais e transições de estado, nunca o corpo clínico textual.
+
+---
+
+## 5. Garantia de Imutabilidade e Ledger Criptográfico
+
+Para garantir conformidade legal com a legislação brasileira de prontuários eletrônicos (PEP) e fornecer provas matemáticas contra adulteração direta no banco de dados (tamper-evidence), o ecossistema Aura implementa um **Ledger Criptográfico** de ponta a ponta. 
+
+A arquitetura de imutabilidade é dividida em duas camadas: **Hash Chain interna** (encadeamento síncrono em banco de dados) e **Ancoragem externa** (consolidação assíncrona diária com carimbo de tempo ICP-Brasil e Blockchain).
+
+> [!IMPORTANT]
+> **Restrição de Escopo Clínico-Legal**:
+> Por motivos de otimização de concorrência e custo, o Ledger Criptográfico é aplicado **estritamente** às tabelas de relevância médico-legal: `prescriptions` e `prescription_validity_logs` (Aura Pulso) e `clinical_evolutions` (Aura Fluxo). Tabelas administrativas ou mutáveis (como `appointments`) não participam do encadeamento para evitar gargalos de IO no SQLite.
+
+```mermaid
+flowchart TD
+    subgraph "Escrita Síncrona (Edge Worker)"
+        A[Novo Registro Clínico] --> B[Obtém previous_hash do último registro]
+        B --> C[Gera payload_json_canonico]
+        C --> D["Calcula current_hash = SHA-256(payload_json_canonico + previous_hash + created_at)"]
+        D --> E["INSERT com OCC (Verifica se previous_hash ainda é o atual)"]
+        E -- Colisão / Erro --> F[Retry: Recalcula e Tenta Novamente]
+        E -- Sucesso --> G[Banco de Dados D1]
+    end
+
+    subgraph "Consolidação Diária (Cron às 23:59)"
+        G --> H[Coleta todos os current_hash do dia por Tenant]
+        H --> I[Gera Árvore de Merkle]
+        I --> J[Obtém Merkle Root]
+    end
+
+    subgraph "Ancoragem Híbrida Externa"
+        J --> K["Cloudflare R2 WORM Bucket (Retenção de 5 anos)"]
+        J --> L["OpenTimestamps (Decentralized Proof - Gratuito)"]
+        J --> M["ICP-Brasil ACT Adapter (Legal Proof - 1/dia por Tenant)"]
+    end
+```
+
+### 1. Mecânica da Hash Chain Interna
+
+Cada registro inserido em uma tabela sob o Ledger Criptográfico deve obrigatoriamente se vincular à linha anterior através de uma corrente de hashes (*Hash Chain*), impedindo qualquer tentativa de reordenação, inserção retrospectiva ou remoção silenciosa de registros médicos.
+
+* **previous_hash (TEXT)**: Contém o `current_hash` do registro anterior correspondente àquele escopo (ex: mesmo `tenant_id` ou mesmo `tenant_id` + `patient_id` para evoluções clínicas). Para o primeiro registro do escopo (gênese), o valor deve ser preenchido com uma string constante de zeros (`0000000000000000000000000000000000000000000000000000000000000000`).
+* **current_hash (TEXT)**: Representa o hash criptográfico calculado para a linha atual.
+
+#### Algoritmo de Hashing na Borda
+A geração do hash é feita de forma síncrona pelo Cloudflare Worker antes do commit no banco D1, utilizando a Web Crypto API nativa do runtime da Cloudflare (`crypto.subtle.digest`):
+
+> **Fórmula de Geração de Hash:**
+> `current_hash = SHA-256(payload_json_canonico + previous_hash + created_at)`
+
+1. **payload_json_canonico**: O JSON correspondente ao conteúdo médico e metadados da linha (como ID, CPF do médico e conteúdo textual) passa por uma função de canonicidade (ordenação alfabética determinística de chaves e formatação de espaçamento estrita) para garantir consistência em qualquer linguagem.
+2. **previous_hash**: O hash da linha anterior do encadeamento.
+3. **created_at**: Timestamp Unix em milissegundos da criação do registro.
+
+```typescript
+// Exemplo de cálculo de Hash Criptográfico na Borda (Edge Worker)
+async function calculateRowHash(
+  payload: Record<string, any>,
+  previousHash: string,
+  createdAt: number
+): Promise<string> {
+  // 1. Canonicidade do JSON (ordenação determinística das chaves)
+  const canonicalPayload = JSON.stringify(payload, Object.keys(payload).sort());
+  
+  // 2. Concatenação dos componentes
+  const inputString = `${canonicalPayload}|${previousHash}|${createdAt}`;
+  const encoder = new TextEncoder();
+  const data = encoder.encode(inputString);
+  
+  // 3. Hashing usando a Web Crypto API (nativo e cloud-agnostic)
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  
+  // 4. Conversão para representação hexadecimal
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+```
+
+---
+
+### 2. Controle de Concorrência Otimista (OCC)
+
+Como o SQLite/D1 opera com escritas distribuídas globais através dos Workers da borda, existe o risco de dois Workers tentarem criar novos registros simultaneamente para o mesmo paciente ou clínica. Se ambos lerem o mesmo `previous_hash` inicial, ocorreria uma bifurcação (*fork*) na corrente de hashes, quebrando a linearidade.
+
+Para evitar isso, a inserção é feita com **Controle de Concorrência Otimista (OCC)** diretamente no comando de escrita:
+
+1. **Inserção Condicional**: A query SQL de inserção realiza uma verificação atômica de que o `previous_hash` fornecido na inserção ainda é o `current_hash` do registro mais recente daquela cadeia no banco de dados.
+2. **Exemplo de Expressão SQL**:
+   ```sql
+   INSERT INTO prescriptions (id, tenant_id, doctor_cpf, patient_name, patient_cpf, content, previous_hash, current_hash, created_at)
+   SELECT :id, :tenant_id, :doctor_cpf, :patient_name, :patient_cpf, :content, :previous_hash, :current_hash, :created_at
+   WHERE (
+     -- Verifica se o último registro cadastrado possui o current_hash igual ao previous_hash enviado
+     SELECT current_hash FROM prescriptions 
+     WHERE tenant_id = :tenant_id 
+     ORDER BY created_at DESC LIMIT 1
+   ) = :previous_hash
+   OR (
+     -- Permite a inserção caso seja o primeiro registro (tabela/cadeia vazia)
+     SELECT COUNT(*) FROM prescriptions WHERE tenant_id = :tenant_id
+   ) = 0;
+   ```
+
+#### Fluxo de Retentativas do Worker
+Se o banco de dados retornar que nenhuma linha foi inserida (indicando colisão de concorrência), o Cloudflare Worker intercepta a resposta e realiza o seguinte fluxo automático:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Tentativa1: Tenta Inserir Registro
+    Tentativa1 --> Sucesso: Gravação Concluída (1 linha afetada)
+    Tentativa1 --> Colisao: Concorrência Identificada (0 linhas afetadas)
+    Colisao --> FetchNovoHash: Busca novo current_hash do banco
+    FetchNovoHash --> Recalculo: Atualiza previous_hash e recalcula current_hash
+    Recalculo --> Tentativa2: Tenta Inserir Novamente (Tentativa 2/3)
+    Tentativa2 --> Sucesso: Gravação Concluída
+    Tentativa2 --> Colisao2: Nova Colisão
+    Colisao2 --> MaxLimitCheck
+    MaxLimitCheck --> FalhaGeral: Excede 3 Tentativas (Erro JQ491_CONCURRENCY_ERROR)
+```
+
+1. Efetua um `SELECT` para obter o novo `current_hash` da linha mais recente.
+2. Atualiza o valor de `previous_hash` para o novo hash obtido.
+3. Atualiza o timestamp `created_at` para o horário atual.
+4. Recalcula o `current_hash` do novo bloco.
+5. Executa novamente o `INSERT` condicional.
+6. O processo se repete por até **3 tentativas**. Se persistir a colisão, retorna um erro HTTP `409 Conflict` com o código **`JQ491_CONCURRENCY_ERROR`**.
+
+---
+
+### 3. Consolidação Diária via Árvore de Merkle
+
+Para congelar e resumir todas as transações de um determinado dia em uma única prova matemática portátil, a Aura adota a consolidação diária baseada em **Árvores de Merkle** (*Merkle Trees*).
+
+1. **Cron Trigger (Diário às 23:59)**: Um worker agendado varre o banco de dados de cada tenant buscando todos os registros das tabelas protegidas (`prescriptions`, `prescription_validity_logs`, `clinical_evolutions`) inseridos nas últimas 24 horas.
+2. **Geração das Folhas**: Os valores de `current_hash` de cada registro daquele dia são ordenados cronologicamente e servem como nós folha da árvore de Merkle.
+3. **Cálculo da Raiz (Merkle Root)**: Os nós são agrupados em pares e hashados sucessivamente (H(A + B)) até que reste apenas uma única hash final: a **Raiz de Merkle (Merkle Root)**.
+
+> **Fórmula da Raiz de Merkle:**
+> `Merkle Root = SHA-256(Sub-Árvore Esquerda + Sub-Árvore Direita)`
+
+A Raiz de Merkle funciona como um lacre de segurança. Qualquer adulteração em qualquer registro do dia invalida a raiz calculada.
+
+---
+
+### 4. Ancoragem Híbrida Externa
+
+Uma vez gerada a Raiz de Merkle diária de cada silo de cliente (tenant), a integridade precisa ser atestada externamente para garantir que nem mesmo um administrador com privilégios totais na infraestrutura do banco de dados Cloudflare D1 consiga alterar o histórico sem deixar rastros. A Aura utiliza uma estratégia de **Ancoragem Híbrida**:
+
+#### A. Ancoragem Técnica (R2 WORM Bucket)
+* **Destino**: O JSON contendo a estrutura completa da Árvore de Merkle (folhas, ramos e a raiz) é salvo em um bucket do **Cloudflare R2**.
+* **Política WORM (Write Once, Read Many)**: Este bucket R2 possui uma política estrita de retenção habilitada por objeto. Arquivos gravados na pasta de consolidação diária não podem ser deletados ou sobrescritos por nenhum usuário, API ou credencial por um período regulamentar de **5 anos**.
+
+#### B. Ancoragem Legal (OpenTimestamps + ICP-Brasil ACT)
+Para atestar juridicamente a data de existência da Raiz de Merkle e das transações associadas, a raiz é submetida a duas redes de carimbo de tempo:
+
+1. **OpenTimestamps (Blockchain Pública - Custo Zero)**: A Raiz de Merkle é submetida de forma gratuita ao protocolo OpenTimestamps, que insere o hash na rede do Bitcoin. Isso garante uma prova matemática de existência temporal irrefutável e descentralizada em escala global.
+2. **ICP-Brasil (Autoridade de Carimbo de Tempo - Conformidade Legal)**: A raiz também é enviada para uma Autoridade de Carimbo de Tempo (ACT) credenciada ao padrão ICP-Brasil (infraestrutura de chaves públicas brasileira), que retorna um token de carimbo de tempo assinado digitalmente com a hora oficial do país (Hora de Brasília).
+3. **Otimização de Custos Transacionais**: As requisições de carimbos de tempo sob o padrão ICP-Brasil são cobradas por chamada. Se o sistema carimbasse cada receita ou prontuário gerado individualmente, o custo operacional seria proibitivo. Ao agrupar todos os registros do dia em uma Árvore de Merkle e carimbar **apenas a Raiz de Merkle consolidada (exatamente 1 chamada ICP-Brasil por tenant por dia)**, a Aura garante conformidade jurídica total para milhares de registros médicos diários a um custo fixo de centenas de vezes menor.
+
 
