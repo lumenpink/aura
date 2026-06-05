@@ -308,19 +308,35 @@ A geração do hash é feita de forma síncrona pelo Cloudflare Worker antes do 
 > **Fórmula de Geração de Hash:**
 > `current_hash = SHA-256(payload_json_canonico + previous_hash + created_at)`
 
-1. **payload_json_canonico**: O JSON correspondente ao conteúdo médico e metadados da linha (como ID, CPF do médico e conteúdo textual) passa por uma função de canonicidade (ordenação alfabética determinística de chaves e formatação de espaçamento estrita) para garantir consistência em qualquer linguagem.
+1. **payload_json_canonico**: O JSON correspondente ao conteúdo médico e metadados da linha (como ID, CPF do médico e conteúdo textual) passa por uma função de canonicidade. O ecossistema adota uma abordagem recursiva nativa (`deepSortObject`) para garantir a ordenação de chaves em todos os níveis e sub-objetos aninhados de forma determinística, sem depender de bibliotecas externas no V8 Isolate.
 2. **previous_hash**: O hash da linha anterior do encadeamento.
 3. **created_at**: Timestamp Unix em milissegundos da criação do registro.
 
 ```typescript
+// Função auxiliar recursiva para ordenação profunda das chaves
+function deepSortObject(obj: any): any {
+  if (obj === null || typeof obj !== "object") {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(deepSortObject);
+  }
+  const sortedKeys = Object.keys(obj).sort();
+  const result: Record<string, any> = {};
+  for (const key of sortedKeys) {
+    result[key] = deepSortObject(obj[key]);
+  }
+  return result;
+}
+
 // Exemplo de cálculo de Hash Criptográfico na Borda (Edge Worker)
 async function calculateRowHash(
   payload: Record<string, any>,
   previousHash: string,
   createdAt: number
 ): Promise<string> {
-  // 1. Canonicidade do JSON (ordenação determinística das chaves)
-  const canonicalPayload = JSON.stringify(payload, Object.keys(payload).sort());
+  // 1. Canonicidade do JSON (ordenação recursiva profunda das chaves)
+  const canonicalPayload = JSON.stringify(deepSortObject(payload));
   
   // 2. Concatenação dos componentes
   const inputString = `${canonicalPayload}|${previousHash}|${createdAt}`;

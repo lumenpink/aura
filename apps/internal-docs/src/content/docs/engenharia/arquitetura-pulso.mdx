@@ -49,6 +49,7 @@ export const prescriptionStatusEnum = [
 // 1. Tabela Principal de Prescrições
 export const prescriptions = sqliteTable('prescriptions', {
   id: text('id').primaryKey(), // UUID v4
+  tenantId: text('tenant_id').notNull(),
   patientCpf: text('patient_cpf').notNull(),
   patientName: text('patient_name').notNull(),
   patientBirthdate: text('patient_birthdate').notNull(), // Formato ISO AAAA-MM-DD
@@ -233,8 +234,18 @@ export async function generatePrescriptionPdf(
 
   // Medicamentos
   let currentY = 580;
+  let currentPage = firstPage;
+  
   for (const item of data.items) {
-    firstPage.drawText(`${item.medicationName} (${item.concentration}) - Qtd: ${item.quantity}`, {
+    if (currentY < 150) {
+      // Se atingir a margem inferior, copia a primeira página (layout base) e adiciona ao documento
+      const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [0]);
+      pdfDoc.addPage(copiedPage);
+      currentPage = copiedPage;
+      currentY = 700; // Redefine para o topo da área útil
+    }
+
+    currentPage.drawText(`${item.medicationName} (${item.concentration}) - Qtd: ${item.quantity}`, {
       x: 80,
       y: currentY,
       size: 11,
@@ -242,7 +253,7 @@ export async function generatePrescriptionPdf(
       color: rgb(0.12, 0.12, 0.14)
     });
     
-    firstPage.drawText(item.instructions, {
+    currentPage.drawText(item.instructions, {
       x: 95,
       y: currentY - 15,
       size: 9,
@@ -253,8 +264,8 @@ export async function generatePrescriptionPdf(
     currentY -= 45;
   }
 
-  // Dados do Médico e Assinatura
-  firstPage.drawText(`Dr(a). ${data.prescriber.name}`, {
+  // Dados do Médico e Assinatura (impressos na última página gerada)
+  currentPage.drawText(`Dr(a). ${data.prescriber.name}`, {
     x: 200,
     y: 120,
     size: 10,
@@ -262,7 +273,7 @@ export async function generatePrescriptionPdf(
     color: rgb(0.12, 0.12, 0.14)
   });
   
-  firstPage.drawText(`CRM: ${data.prescriber.crm}-${data.prescriber.crmUf}`, {
+  currentPage.drawText(`CRM: ${data.prescriber.crm}-${data.prescriber.crmUf}`, {
     x: 200,
     y: 105,
     size: 8,
