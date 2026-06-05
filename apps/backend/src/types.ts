@@ -1,4 +1,4 @@
-import type { D1Database, KVNamespace } from '@cloudflare/workers-types';
+import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
 import type { DomainName, ViteApiUrl, AllowedOrigins } from '@aura/shared';
 
 /**
@@ -13,6 +13,9 @@ export interface Bindings {
   
   // Session revocation KV store
   REVOCATION_KV?: KVNamespace;
+  
+  // Sync queue bucket
+  SYNC_BUCKET: R2Bucket;
   
   // Domain routing validations
   API_DOMAIN: DomainName;

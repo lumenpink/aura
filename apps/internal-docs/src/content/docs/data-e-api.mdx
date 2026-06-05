@@ -14,28 +14,34 @@ Para garantir segurança estrita, conformidade com a LGPD e mitigar contenções
 - **Isolamento de Tenant**: Cada clínica possui um Worker dedicado e bancos de dados fisicamente separados.
 - **CQRS Lite (Segregação de Leitura/Escrita)**:
   - **`D1_MAIN` (OLTP - Operacional)**: Focado em transações de alta frequência (login, agendamentos, prontuários).
-  - **`D1_ANALYTICS` (OLAP - Relatórios)**: Focado em consultas pesadas, agregações e paginações de relatórios.
-- **Sincronização Assíncrona**: Ocorre via `c.executionCtx.waitUntil()`. Se a replicação para o `D1_ANALYTICS` falhar, os dados da falha são gravados na tabela `sync_fallbacks` do `D1_MAIN` para reconciliação posterior por um Cron Trigger.
+  - **`D1_ANALYTICS` (OLAP - Relatórios)**: Focado em consultas pesadas, agregações e relatórios.
+- **Sincronização Assíncrona Eventual**: Ocorre de forma desacoplada via **Cloudflare R2** e **Cron Triggers**:
+  - As operações de escrita gravam síncronamente no `D1_MAIN` e salvam o payload de sincronização em formato JSON em um bucket R2 (`SYNC_BUCKET`) sob o prefixo `queue/`.
+  - Se a gravação no R2 falhar por erro de rede/plataforma, a falha é registrada na tabela `sync_fallbacks` do `D1_MAIN` para contingência.
+  - Um Scheduled Worker (Cron) roda a cada 1 minuto, adquire um lock distribuído temporário no KV (`lock:sync_analytics` com TTL de 5min contra travamentos), processa os payloads do R2 em lotes para otimizar a escrita no `D1_ANALYTICS` e remove os arquivos da fila após o sucesso da sincronização.
 
 ```mermaid
 sequenceDiagram
     participant Client as Cliente (Frontend)
     participant Worker as Worker (Backend Hono)
     participant D1Main as D1_MAIN (OLTP)
+    participant R2 as Cloudflare R2 (SYNC_BUCKET)
+    participant Cron as Cron Worker (Scheduled)
     participant D1Analytics as D1_ANALYTICS (OLAP)
 
     Client->>Worker: Mutação HTTP (ex: Salvar Agendamento)
-    Worker->>D1Main: Gravação Síncrona (Commit)
-    D1Main-->>Worker: OK
-    Note over Worker: Dispara waitUntil() para Analytics
-    Worker-->>Client: Resposta HTTP 200 OK (Interface Liberada)
+    Worker->>D1Main: 1. Gravação Síncrona (Commit)
+    Worker->>R2: 2. Grava payload JSON (queue/)
+    alt Falha na Gravação R2
+        Worker->>D1Main: Grava log em sync_fallbacks
+    end
+    Worker-->>Client: Resposta HTTP 200 OK
     
     rect rgb(30, 20, 40)
-        Note right of Worker: Execução em Background
-        Worker->>D1Analytics: Replicação (Upsert)
-        alt Falha na Replicação
-            Worker->>D1Main: Gravação em sync_fallbacks
-        end
+        Note over Cron, D1Analytics: Reconciliação (Cron - Eventual)
+        Cron->>R2: Lista e lê arquivos JSON pendentes
+        Cron->>D1Analytics: Gravação em Lote (Batch Insert)
+        Cron->>R2: Deleta arquivos processados de R2
     end
 ```
 

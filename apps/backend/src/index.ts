@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { domainSchema, allowedOriginsSchema } from '@aura/shared';
 import auth from './routes/auth';
 import type { Bindings } from './types';
+import { syncR2ToAnalytics } from './utils/sync';
 
 // Initialize the main Hono application instance
 const app = new Hono<{ Bindings: Bindings }>();
@@ -91,4 +92,33 @@ apiRouter.get('/agenda', (c) => {
 app.route('/auth', authRouter);
 app.route('/api', apiRouter);
 
-export default app;
+export default {
+  fetch: app.fetch,
+  request: app.request.bind(app),
+  async scheduled(event: any, env: Bindings, ctx: any) {
+    const lockKey = 'lock:sync_analytics';
+    
+    // 1. Concurrency lock check using KV
+    if (env.REVOCATION_KV) {
+      const isLocked = await env.REVOCATION_KV.get(lockKey);
+      if (isLocked) {
+        console.log('[Sync-Cron] Sync task is already running. Aborting current execution.');
+        return;
+      }
+      // Set lock with 5 minutes (300 seconds) safety TTL
+      await env.REVOCATION_KV.put(lockKey, 'true', { expirationTtl: 300 });
+    }
+
+    try {
+      // 2. Execute synchronization
+      await syncR2ToAnalytics(env);
+    } catch (err) {
+      console.error('[Sync-Cron] Fatal error during sync:', err);
+    } finally {
+      // 3. Release Lock
+      if (env.REVOCATION_KV) {
+        await env.REVOCATION_KV.delete(lockKey);
+      }
+    }
+  }
+};
