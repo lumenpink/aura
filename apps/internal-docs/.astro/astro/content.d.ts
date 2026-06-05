@@ -173,6 +173,13 @@ declare module 'astro:content' {
   collection: "docs";
   data: InferEntrySchema<"docs">
 } & { render(): Render[".mdx"] };
+"engenharia/arquitetura-pulso.mdx": {
+	id: "engenharia/arquitetura-pulso.mdx";
+  slug: "engenharia/arquitetura-pulso";
+  body: string;
+  collection: "docs";
+  data: InferEntrySchema<"docs">
+} & { render(): Render[".mdx"] };
 "engenharia/codigos-erro.md": {
 	id: "engenharia/codigos-erro.md";
   slug: "engenharia/codigos-erro";

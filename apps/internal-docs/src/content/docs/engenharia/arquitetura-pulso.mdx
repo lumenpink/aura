@@ -1,0 +1,345 @@
+---
+title: Arquitetura Aura Pulso
+description: Diretrizes de arquitetura, contratos de API, modelagem Drizzle ORM e estratégias para a emissão de receitas na borda no Aura Pulso.
+---
+
+O **Aura Pulso** é o microsserviço dedicado e autônomo do ecossistema Aura focado exclusivamente na emissão, validação e arquivamento de prescrições médicas. Ele opera de forma completamente isolada do Aura Fluxo e Aura Traço, possuindo seu próprio banco de dados SQLite (Cloudflare D1), seu próprio frontend (React/Vite) e seu próprio backend (Hono/Cloudflare Workers).
+
+---
+
+## 1. Topologia de Infraestrutura e Portas
+
+Para manter o completo isolamento e garantir o espelhamento do ambiente em desenvolvimento local, o Aura Pulso opera sob os seguintes domínios e portas:
+
+* **Frontend**: `pulso.localhost:12401`
+* **Backend API**: `pulso-api.localhost:12402`
+* **Banco de Dados**: Silo SQLite exclusivo persistido localmente em `.wrangler/state/v3/d1` sob a pasta `apps/pulso-backend`.
+* **Políticas de Autenticação**:
+  - Sessão baseada em Refresh Tokens armazenados em cookies HttpOnly com escopo restrito a `/auth` (`Path=/auth`, `Secure`, `SameSite=Strict`).
+  - CORS configurado estritamente apontando para a origem do frontend `http://pulso.localhost:12401`, com cache de preflight (`maxAge: 86400`) para otimização de performance.
+
+---
+
+## 2. Modelagem de Dados (D1 & Drizzle ORM)
+
+O banco de dados do Aura Pulso gerencia o ciclo de vida das receitas, os itens prescritos e as regras de controle de validade e controle especial da Anvisa. 
+
+Abaixo está a especificação técnica dos schemas utilizando o **Drizzle ORM**:
+
+```typescript
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+
+// Tipos de Receituário permitidos conforme normas da ANVISA
+export const prescriptionTypeEnum = [
+  'comum',                      // Receita Simples (Sem retenção)
+  'controle_especial_branco',   // Controle Especial (Duas vias - Branca)
+  'azul_b1_b2',                 // Notificação de Receita B1/B2 (Azul)
+  'amarelo_a'                   // Notificação de Receita A (Amarela)
+] as const;
+
+// Status do ciclo de vida da receita
+export const prescriptionStatusEnum = [
+  'rascunho',   // Criada, mas não finalizada/assinada
+  'ativa',      // Assinada digitalmente e válida
+  'dispensada', // Utilizada na farmácia (caso integrado)
+  'expirada',   // Passou do prazo de validade sem uso
+  'cancelada'   // Revogada pelo médico
+] as const;
+
+// 1. Tabela Principal de Prescrições
+export const prescriptions = sqliteTable('prescriptions', {
+  id: text('id').primaryKey(), // UUID v4
+  patientCpf: text('patient_cpf').notNull(),
+  patientName: text('patient_name').notNull(),
+  patientBirthdate: text('patient_birthdate').notNull(), // Formato ISO AAAA-MM-DD
+  
+  // Informações do Médico Prescritor (extraídas da sessão/JWT)
+  doctorCpf: text('doctor_cpf').notNull(),
+  doctorName: text('doctor_name').notNull(),
+  doctorCrm: text('doctor_crm').notNull(),
+  doctorCrmUf: text('doctor_crm_uf').notNull(), // Sigla do Estado (ex: SP)
+  
+  // Classificação regulatória da receita
+  type: text('type', { enum: prescriptionTypeEnum }).notNull(),
+  status: text('status', { enum: prescriptionStatusEnum }).default('rascunho').notNull(),
+  
+  // Dados de Validade (Regras dinâmicas de expiração)
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  
+  // Assinatura Digital ICP-Brasil (Padrão CFM/ITI)
+  digitalSignature: text('digital_signature'), // Hash assinado PKCS#7 / CMS
+  signedAt: integer('signed_at', { mode: 'timestamp' }),
+  payloadHash: text('payload_hash') // Hash SHA-256 do payload original que foi assinado
+});
+
+// 2. Tabela de Itens da Prescrição (Medicamentos e Posologia)
+export const prescriptionItems = sqliteTable('prescription_items', {
+  id: text('id').primaryKey(), // UUID v4
+  prescriptionId: text('prescription_id')
+    .notNull()
+    .references(() => prescriptions.id, { onDelete: 'cascade' }),
+  
+  medicationName: text('medication_name').notNull(), // Princípio Ativo ou Nome Comercial
+  dosageForm: text('dosage_form').notNull(),       // Ex: Comprimido, Xarope, Ampola
+  concentration: text('concentration').notNull(),   // Ex: 500mg, 10mg/mL
+  quantity: text('quantity').notNull(),             // Ex: 2 caixas, 1 frasco
+  instructions: text('instructions').notNull(),     // Posologia e orientações de uso
+  
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull()
+});
+
+// 3. Tabela de Log de Validação de Receita (Histórico de Dispensação/Uso)
+export const prescriptionValidityLogs = sqliteTable('prescription_validity_logs', {
+  id: text('id').primaryKey(),
+  prescriptionId: text('prescription_id')
+    .notNull()
+    .references(() => prescriptions.id),
+  action: text('action').notNull(), // Ex: 'VALIDATED', 'DISPENSED', 'EXPIRED'
+  performedBy: text('performed_by').notNull(), // Identificador da farmácia ou sistema
+  notes: text('notes'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull()
+});
+```
+
+---
+
+## 3. Conformidade Regulatória (CFM/Anvisa & ICP-Brasil)
+
+Toda prescrição eletrônica no Brasil precisa estar assinada digitalmente por um médico devidamente registrado no CRM para ter validade jurídica. A assinatura deve seguir as normas do ITI (Instituto Nacional de Tecnologia da Informação) e ICP-Brasil.
+
+### Fluxo de Geração e Assinatura
+O Aura Pulso gera o payload estruturado contendo os dados necessários, calcula o hash criptográfico e armazena o envelope de assinatura após a validação no cliente.
+
+```mermaid
+sequenceDiagram
+    participant Dr as Médico (Navegador)
+    participant Pulso as Aura Pulso (Backend CF Worker)
+    participant Traco as Aura Traço (Assinatura / WebPKI)
+
+    Dr->>Pulso: 1. Salvar Prescrição (Rascunho)
+    Pulso-->>Dr: Retorna ID da Receita e Payload JSON Estruturado
+    Dr->>Dr: 2. Gera SHA-256 local do Payload
+    Dr->>Traco: 3. Solicita Assinatura ICP-Brasil do Hash (WebPKI / Certificado A1/A3)
+    Traco-->>Dr: Retorna Assinatura Digital (PKCS#7 / CMS format)
+    Dr->>Pulso: 4. Envia Assinatura Digital e Hash assinado (/api/prescriptions/:id/sign)
+    Pulso->>Pulso: Valida Hash e CRM do Médico
+    Pulso->>Pulso: Altera Status para 'ativa'
+    Pulso-->>Dr: Confirmação e link para download do PDF assinado
+```
+
+### Contrato de Payload de Assinatura (JSON Estruturado)
+Este JSON é o payload original padronizado que sofrerá o hashing e a assinatura digital:
+
+```json
+{
+  "version": "1.0.0",
+  "prescriptionId": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
+  "issuedAt": "2026-06-05T03:15:00.000Z",
+  "expiresAt": "2026-07-05T03:15:00.000Z",
+  "prescriber": {
+    "name": "Dr. Fernando Henrique",
+    "cpf": "12345678909",
+    "crm": "123456",
+    "crmUf": "SP",
+    "role": "MEDICO"
+  },
+  "patient": {
+    "name": "João da Silva",
+    "cpf": "98765432100",
+    "birthdate": "1985-10-20"
+  },
+  "prescriptionType": "controle_especial_branco",
+  "items": [
+    {
+      "medicationName": "Clonazepam",
+      "concentration": "2mg",
+      "dosageForm": "Comprimido",
+      "quantity": "1 caixa",
+      "instructions": "Tomar 1 comprimido por via oral antes de dormir."
+    }
+  ]
+}
+```
+
+---
+
+## 4. Geração de PDFs na Borda (Edge - Cloudflare Workers)
+
+Bibliotecas tradicionais de PDF (como Puppeteer para renderizar HTML, ou `pdfkit` que utiliza bindings de sistemas de arquivos nativos) **não funcionam** dentro de runtimes V8 Isolates do Cloudflare Workers devido à ausência de APIs nativas do Node.js (`fs`, `child_process`) e ao limite rigoroso de tamanho do Worker e tempo de processamento de CPU (10ms a 50ms).
+
+### Solução Cloud-Agnostic na Borda: `pdf-lib` + R2 Template Filling
+
+Para possibilitar a geração segura na borda sem intermediários pesados, a Aura Pulso adota a seguinte arquitetura:
+
+1. **Templates Predefinidos em R2/KV**:
+   - Um arquivo PDF base, contendo as bordas estruturadas, marcas d'água regulatórias da clínica, cabeçalho e rodapé é desenhado previamente e salvo no bucket **Cloudflare R2** (`prescriptions-templates/base-receituario.pdf`).
+2. **Manipulação Leve via `pdf-lib`**:
+   - A biblioteca `pdf-lib` é compilada de forma 100% autônoma em Javascript puro, sem dependências de C++ ou do Node.js.
+   - O Worker lê os bytes do PDF base do R2 e carrega na memória.
+   - Os dados variáveis (nome do paciente, CRM, medicamentos) são desenhados diretamente nas coordenadas geográficas bidimensionais da página PDF.
+3. **Injeção de Metadados e Link da Assinatura**:
+   - O QR Code para consulta regulatória CFM (contendo o link de verificação) é desenhado como imagem JPEG/PNG nos bytes do PDF.
+
+#### Exemplo de Código Compatível com Workers (Edge):
+
+```typescript
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+
+export async function generatePrescriptionPdf(
+  templateBytes: ArrayBuffer,
+  data: any
+): Promise<Uint8Array> {
+  // 1. Carrega o PDF base preexistente na memória
+  const pdfDoc = await PDFDocument.load(templateBytes);
+  
+  // 2. Obtém a primeira página do PDF base
+  const pages = pdfDoc.getPages();
+  const firstPage = pages[0];
+  if (!firstPage) throw new Error("Template PDF inválido");
+
+  // 3. Registra fontes padrão seguras
+  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  // 4. Desenha as informações dinâmicas nas coordenadas físicas do PDF
+  // Informações do Paciente
+  firstPage.drawText(`PACIENTE: ${data.patient.name}`, {
+    x: 80,
+    y: 650,
+    size: 11,
+    font: helveticaBold,
+    color: rgb(0.12, 0.12, 0.14)
+  });
+
+  firstPage.drawText(`CPF: ${data.patient.cpf}`, {
+    x: 80,
+    y: 635,
+    size: 9,
+    font: helveticaFont,
+    color: rgb(0.3, 0.3, 0.3)
+  });
+
+  // Linha Separadora
+  firstPage.drawLine({
+    start: { x: 80, y: 620 },
+    end: { x: 500, y: 620 },
+    thickness: 1,
+    color: rgb(0.8, 0.8, 0.8)
+  });
+
+  // Medicamentos
+  let currentY = 580;
+  for (const item of data.items) {
+    firstPage.drawText(`${item.medicationName} (${item.concentration}) - Qtd: ${item.quantity}`, {
+      x: 80,
+      y: currentY,
+      size: 11,
+      font: helveticaBold,
+      color: rgb(0.12, 0.12, 0.14)
+    });
+    
+    firstPage.drawText(item.instructions, {
+      x: 95,
+      y: currentY - 15,
+      size: 9,
+      font: helveticaFont,
+      color: rgb(0.4, 0.4, 0.4)
+    });
+    
+    currentY -= 45;
+  }
+
+  // Dados do Médico e Assinatura
+  firstPage.drawText(`Dr(a). ${data.prescriber.name}`, {
+    x: 200,
+    y: 120,
+    size: 10,
+    font: helveticaBold,
+    color: rgb(0.12, 0.12, 0.14)
+  });
+  
+  firstPage.drawText(`CRM: ${data.prescriber.crm}-${data.prescriber.crmUf}`, {
+    x: 200,
+    y: 105,
+    size: 8,
+    font: helveticaFont,
+    color: rgb(0.4, 0.4, 0.4)
+  });
+
+  // 5. Salva o documento modificado
+  return await pdfDoc.save();
+}
+```
+
+---
+
+## 5. Comunicação Inter-serviços (M2M - HTTP)
+
+Como o Aura Pulso opera de forma isolada, no momento de criar uma receita, o médico precisa puxar os dados demográficos do paciente cadastrado na base clínica principal (Aura Fluxo) sem que o paciente precise redigitá-los. 
+
+A comunicação ocorre de forma cross-origin via API HTTP M2M (Machine-to-Machine) estritamente criptografada.
+
+```mermaid
+sequenceDiagram
+    participant Pulso as Aura Pulso (Workers Backend)
+    participant Fluxo as Aura Fluxo (Workers Backend)
+    
+    Pulso->>Pulso: Gera Token JWT M2M temporário
+    Pulso->>Fluxo: GET /api/external/patients/98765432100
+    Note over Pulso, Fluxo: Headers: Authorization: Bearer <JWT_M2M>
+    Fluxo->>Fluxo: Valida Assinatura do JWT usando chave pública do Pulso
+    Fluxo-->>Pulso: Retorna JSON com dados demográficos (Nome, Nascimento)
+```
+
+### Contrato de Comunicação
+* **Endpoint de Consulta (Aura Fluxo)**: `GET /api/external/patients/:cpf`
+* **Autenticação**: Cabeçalho `Authorization: Bearer <M2M_JWT_TOKEN>`
+  - O JWT é assinado por chave privada do Worker do Aura Pulso. O Aura Fluxo conhece a chave pública do Pulso e valida a autenticidade e o tempo de validade do token (expira em 30 segundos).
+
+#### Cabeçalho HTTP de Requisição
+```http
+GET /api/external/patients/12345678901 HTTP/1.1
+Host: fluxo-api.localhost:12202
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+X-Aura-Source-Service: pulso-backend
+Accept: application/json
+```
+
+#### Resposta HTTP de Sucesso (200 OK)
+```json
+{
+  "cpf": "12345678901",
+  "name": "Maria Oliveira Souza",
+  "birthdate": "1992-04-12",
+  "gender": "F",
+  "metadata": {
+    "lastSync": "2026-06-05T03:00:00Z"
+  }
+}
+```
+
+#### Resposta de Erro / Acesso Proibido (403 Forbidden)
+Se o token JWT estiver expirado, inválido ou a assinatura não coincidir com a chave confiada:
+```json
+{
+  "error": "Acesso não autorizado",
+  "code": "JQ489_UNAUTHORIZED_M2M",
+  "message": "Token de assinatura de máquina inválido ou expirado"
+}
+```
+
+---
+
+## 6. Rotas Principais da API (`/api/prescriptions`)
+
+Todos os endpoints operacionais estão aninhados sob o sub-roteador `/api` do Aura Pulso.
+
+| Método | Rota | Descrição | Restrição |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/prescriptions` | Cria uma receita em estado de `rascunho`. | Autenticado (Médico) |
+| `GET` | `/api/prescriptions` | Lista o histórico de prescrições emitidas. | Autenticado (Médico) |
+| `GET` | `/api/prescriptions/:id` | Retorna o payload estruturado detalhado da receita. | Autenticado |
+| `POST` | `/api/prescriptions/:id/sign` | Envia a assinatura digital (PKCS#7) validando o hash. Altera o status para `ativa`. | Autenticado (Médico) |
+| `GET` | `/api/prescriptions/:id/pdf` | Retorna o binário do PDF preenchido e pronto para impressão/verificação. | Público (Necessita assinatura ativa) |
+| `POST` | `/api/prescriptions/:id/dispense` | Registra a dispensação do medicamento em farmácia vinculada. | M2M / Farmácia |

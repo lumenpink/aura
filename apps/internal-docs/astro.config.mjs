@@ -45,6 +45,7 @@ export default defineConfig({
         { slug: 'engenharia/sse-reatividade' },
         { slug: 'engenharia/codigos-erro' },
         { slug: 'engenharia/geracao-pdf' },
+        { slug: 'engenharia/arquitetura-pulso' },
       ],
     }),
     react(),
