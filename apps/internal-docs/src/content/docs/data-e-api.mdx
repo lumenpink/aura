@@ -15,9 +15,15 @@ Para garantir segurança estrita, conformidade com a LGPD e mitigar contenções
 - **CQRS Lite (Segregação de Leitura/Escrita)**:
   - **`D1_MAIN` (OLTP - Operacional)**: Focado em transações de alta frequência (login, agendamentos, prontuários).
   - **`D1_ANALYTICS` (OLAP - Relatórios)**: Focado em consultas pesadas, agregações e relatórios.
-- Um Scheduled Worker (Cron) roda a cada 1 minuto, adquire um lock distribuído temporário no KV (`lock:sync_analytics` com TTL de 5min contra travamentos) e executa a reconciliação eventual em duas etapas sequenciais:
-  1. **Processamento da tabela `sync_fallbacks`**: Efetua um `SELECT` no `D1_MAIN` para buscar transações cujos payloads falharam na escrita original para o R2. Para cada falha, obtém o estado atual da entidade no `D1_MAIN`, grava-o no `D1_ANALYTICS` e remove o log de contingência da tabela `sync_fallbacks`.
-  2. **Processamento da Fila do R2**: Varre o bucket R2 (`SYNC_BUCKET`) sob `queue/`, carrega e ordena os eventos pendentes, executa a carga analítica no `D1_ANALYTICS` e deleta os objetos bem-sucedidos do bucket.
+- Um Scheduled Worker (Cron) roda a cada 1 minuto, adquire um lock distribuído temporário no KV (`lock:sync_analytics` com TTL de 5min contra travamentos) e executa a reconciliação eventual unificada e deduplicada:
+  1. **Unificação de Fontes com Controle de Lote**: Busca concorrentemente os registros da tabela `sync_fallbacks` (banco de dados operacional `D1_MAIN`) e os arquivos JSON de mutação pendentes na fila do R2 (`SYNC_BUCKET/queue/`). Para evitar estouro de memória (Out-of-Memory / OOM), o Cron limita o processamento a um lote máximo de 500 a 1000 referências por execução, utilizando paginação via cursor (`continuationToken`) na API `LIST` do R2 e a cláusula `LIMIT` na consulta SQL ao `D1_MAIN`.
+  2. **Mapeamento e Ordenação Cronológica**: Consolida todas as referências em uma lista única de referências de eventos (`EventRef`), mapeando o timestamp de criação, ID do registro e nome da entidade, e ordena-os de forma estritamente cronológica.
+  3. **Agrupamento e Deduplicação**: Agrupa os eventos por entidade exclusiva (`entityName:recordId`). Para cada entidade, identifica apenas o estado mais recente (`latestRef`) a ser processado.
+  4. **Execução do Estado Final (Defesa LWW)**:
+     - Se o estado mais recente for do tipo `R2`, lê o payload correspondente e aplica o upsert no banco analítico (`D1_ANALYTICS`).
+     - Se for do tipo `Fallback`, lê o estado atual direto do banco operacional (`D1_MAIN`) e faz o upsert no banco analítico. Nessa etapa, o `SELECT` no `D1_MAIN` deve obrigatoriamente ignorar filtros lógicos da aplicação (como `deleted_at IS NULL` ou equivalentes), capturando a fotografia bruta do registro mesmo se ele estiver excluído logicamente (soft delete), propagando com precisão a exclusão/tombstone para o banco secundário.
+     - *Defesa Condicional Last-Write-Wins (LWW)*: Todos os upserts no `D1_ANALYTICS` devem ser estritamente condicionais. A instrução de gravação deve conter uma cláusula garantindo que a linha só será sobrescrita se a data de atualização ou timestamp do evento entrante for estritamente maior que a versão já salva no banco de destino. Eventos atrasados ou entregues fora de ordem (*Out-of-Order Delivery*) são descartados silenciosamente, prevenindo regressão de dados.
+  5. **Exclusão Idempotente**: Se o processamento do estado final for bem-sucedido, o Cron executa a **exclusão idempotente** de todos os logs no banco operacional e arquivos temporários associados àquele grupo no R2. Em caso de oscilações de rede que impeçam a deleção de algum arquivo no R2 (deixando arquivos 'fantasmas' órfãos), as execuções futuras do Cron tentarão reprocessá-los. Porém, a defesa condicional LWW (Passo 4) irá rejeitar a gravação repetida no banco analítico, permitindo que a rotina apenas conclua a tentativa de deleção do arquivo de forma segura e sem efeitos colaterais. Se falhar no processamento, todas as referências são mantidas para nova tentativa.
 
 ```mermaid
 sequenceDiagram
@@ -37,15 +43,21 @@ sequenceDiagram
     Worker-->>Client: Resposta HTTP 200 OK
     
     rect rgb(30, 20, 40)
-        Note over Cron, D1Analytics: Reconciliação (Cron - Eventual)
+        Note over Cron, D1Analytics: Reconciliação Unificada (Cron - Eventual)
         Cron->>D1Main: 1. SELECT na tabela sync_fallbacks
-        Cron->>D1Main: 2. Carrega o estado atual da entidade (OLTP)
-        Cron->>D1Analytics: 3. Upsert do registro mais recente (OLAP)
-        Cron->>D1Main: 4. DELETE no log resolvido em sync_fallbacks
-        
-        Cron->>R2: 5. Lista e lê arquivos JSON pendentes no R2
-        Cron->>D1Analytics: 6. Gravação em Lote (Batch Insert)
-        Cron->>R2: 7. Deleta arquivos processados do R2
+        Cron->>R2: 2. LIST arquivos em queue/
+        Note over Cron: Consolida, ordena e agrupa por Entidade
+        Note over Cron: Identifica o último estado (latestRef) do grupo
+        alt O último estado é R2
+            Cron->>R2: GET arquivo JSON (último)
+            Cron->>D1Analytics: Grava estado final (Upsert)
+        else O último estado é Fallback
+            Cron->>D1Main: SELECT foto atual do registro
+            Cron->>D1Analytics: Grava estado final (Upsert)
+        end
+        Note over Cron: Sucesso no processamento do grupo
+        Cron->>D1Main: DELETE todos os fallbacks do grupo
+        Cron->>R2: DELETE todos os arquivos JSON do grupo
     end
 ```
 
