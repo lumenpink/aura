@@ -19,6 +19,36 @@
         "hono": "^4.12.23",
       },
     },
+    "apps/caso-backend": {
+      "name": "@aura/caso-backend",
+      "version": "0.0.1",
+      "dependencies": {
+        "@aura/shared": "workspace:*",
+        "drizzle-orm": "^0.45.2",
+        "hono": "^4.12.23",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260605.1",
+        "wrangler": "^4.98.0",
+      },
+    },
+    "apps/caso-frontend": {
+      "name": "@aura/caso-frontend",
+      "dependencies": {
+        "@aura/shared": "workspace:*",
+        "@aura/ui": "workspace:*",
+        "lucide-react": "^1.17.0",
+        "react": "^19.2.7",
+        "react-dom": "^19.2.7",
+      },
+      "devDependencies": {
+        "@types/react": "^19.2.16",
+        "@types/react-dom": "^19.2.3",
+        "@vitejs/plugin-react": "^6.0.2",
+        "typescript": "^6.0.3",
+        "vite": "^8.0.16",
+      },
+    },
     "apps/fluxo-backend": {
       "name": "@aura/fluxo-backend",
       "version": "0.0.1",
@@ -196,6 +226,10 @@
     "@astrojs/tailwind": ["@astrojs/tailwind@6.0.2", "", { "dependencies": { "autoprefixer": "^10.4.21", "postcss": "^8.5.3", "postcss-load-config": "^4.0.2" }, "peerDependencies": { "astro": "^3.0.0 || ^4.0.0 || ^5.0.0", "tailwindcss": "^3.0.24" } }, "sha512-j3mhLNeugZq6A8dMNXVarUa8K6X9AW+QHU9u3lKNrPLMHhOQ0S7VeWhHwEeJFpEK1BTKEUY1U78VQv2gN6hNGg=="],
 
     "@astrojs/telemetry": ["@astrojs/telemetry@3.3.2", "", { "dependencies": { "ci-info": "^4.4.0", "dset": "^3.1.4", "is-docker": "^4.0.0", "is-wsl": "^3.1.1", "which-pm-runs": "^1.1.0" } }, "sha512-j8DNruA8ors99Al39RYZPJK4DC1bKkoNm93mAMuBhY9TCNC4R8n1q7ovFnJ5qhGh5Lsh7pa1gpQVpYpsJPeTHQ=="],
+
+    "@aura/caso-backend": ["@aura/caso-backend@workspace:apps/caso-backend"],
+
+    "@aura/caso-frontend": ["@aura/caso-frontend@workspace:apps/caso-frontend"],
 
     "@aura/fluxo-backend": ["@aura/fluxo-backend@workspace:apps/fluxo-backend"],
 

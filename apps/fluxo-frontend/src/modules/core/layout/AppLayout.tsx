@@ -1,7 +1,7 @@
 import React from 'react';
 import { Logo, CloudStatus } from '@aura/ui';
 import { useCloudStatus } from '../context/CloudStatusContext';
-import { LayoutDashboard, Calendar, Briefcase, Settings, LogOut, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Calendar, Briefcase, Settings, LogOut, Sun, Moon, Stethoscope } from 'lucide-react';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -24,6 +24,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const menuItems = [
     { id: 'dashboard', label: 'Hub de Dashboards', icon: LayoutDashboard },
     { id: 'agenda', label: 'Agenda', icon: Calendar },
+    { id: 'atendimento', label: 'Atendimento Clínico', icon: Stethoscope },
     { id: 'workspace', label: 'Workspace', icon: Briefcase },
     { id: 'settings', label: 'Configurações', icon: Settings },
   ];

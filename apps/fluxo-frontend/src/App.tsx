@@ -21,6 +21,73 @@ function AppContent() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const { status: cloudStatus, setStatus: setCloudStatus, isSimulating: isSimulatingSync, setIsSimulating: setIsSimulatingSync } = useCloudStatus();
 
+  // MFE Orchestration States
+  const [selectedPatient, setSelectedPatient] = useState<{ name: string; cpf: string; info: string } | null>(null);
+  const [currentHashToSign, setCurrentHashToSign] = useState<string | null>(null);
+  const [isSigningModalOpen, setIsSigningModalOpen] = useState(false);
+  const [lastSignature, setLastSignature] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Load Micro-Frontends scripts dynamically in runtime
+  useEffect(() => {
+    if (activeTab === 'atendimento') {
+      const services = [
+        { id: 'aura-caso-script', src: 'http://localhost:12601/src/main.tsx' },
+        { id: 'aura-pulso-script', src: 'http://localhost:12401/src/main.tsx' },
+        { id: 'aura-traco-script', src: 'http://localhost:12301/src/main.tsx' }
+      ];
+
+      services.forEach(service => {
+        if (!document.getElementById(service.id)) {
+          const script = document.createElement('script');
+          script.id = service.id;
+          script.type = 'module';
+          script.src = service.src;
+          document.body.appendChild(script);
+        }
+      });
+    }
+  }, [activeTab]);
+
+  // Handle Custom Events bubbled from Shadow DOMs of MFEs
+  useEffect(() => {
+    const handlePrescriptionSigned = (e: any) => {
+      const { recipeId, payloadHash } = e.detail;
+      setCurrentHashToSign(payloadHash);
+      setIsSigningModalOpen(true);
+      setToastMessage(`Receita ${recipeId} criada! Aguardando assinatura.`);
+    };
+
+    const handleSignatureSuccess = (e: any) => {
+      const { signature } = e.detail;
+      setLastSignature(signature);
+      setIsSigningModalOpen(false);
+      setToastMessage("Sucesso: Receita assinada nos padrões ICP-Brasil!");
+      
+      // Reset signing state
+      setCurrentHashToSign(null);
+
+      // Auto-clear toast
+      setTimeout(() => setToastMessage(null), 4000);
+    };
+
+    const handleSignatureFailed = (e: any) => {
+      const { error } = e.detail;
+      setToastMessage(`Erro na assinatura: ${error}`);
+      setTimeout(() => setToastMessage(null), 4000);
+    };
+
+    window.addEventListener('prescription-signed', handlePrescriptionSigned);
+    window.addEventListener('signature-success', handleSignatureSuccess);
+    window.addEventListener('signature-failed', handleSignatureFailed);
+
+    return () => {
+      window.removeEventListener('prescription-signed', handlePrescriptionSigned);
+      window.removeEventListener('signature-success', handleSignatureSuccess);
+      window.removeEventListener('signature-failed', handleSignatureFailed);
+    };
+  }, []);
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
@@ -38,6 +105,8 @@ function AppContent() {
     setIsLoggedIn(false);
     setEmail('');
     setPassword('');
+    setSelectedPatient(null);
+    setIsSigningModalOpen(false);
   };
 
   return (
@@ -282,6 +351,141 @@ function AppContent() {
                     </table>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'atendimento' && (
+              <div className="flex flex-col gap-6 flex-1 h-full">
+                {/* Header */}
+                <div className="flex justify-between items-center">
+                  <div className="flex flex-col gap-1">
+                    <h1 className="text-2xl font-light text-zinc-900 dark:text-zinc-100 tracking-wide">Atendimento Clínico</h1>
+                    <p className="text-xs text-zinc-400 dark:text-zinc-500">Módulos integrados do prontuário (Aura Caso) e receituário (Aura Pulso).</p>
+                  </div>
+                </div>
+
+                {/* Main panel layout */}
+                <div className="flex flex-col md:flex-row gap-6 items-stretch flex-1 min-h-[550px]">
+                  {/* Left Column: Patient Selector */}
+                  <div className="w-full md:w-80 shrink-0 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 p-6 flex flex-col gap-4">
+                    <span className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Pacientes do Dia</span>
+                    <div className="flex flex-col gap-2 overflow-y-auto">
+                      {[
+                        { name: 'João da Silva', cpf: '987.654.321-00', info: 'Masculino, 40 anos' },
+                        { name: 'Maria de Souza', cpf: '111.222.333-44', info: 'Feminino, 28 anos' },
+                        { name: 'Pedro Alves', cpf: '555.666.777-88', info: 'Masculino, 54 anos' }
+                      ].map((patient) => {
+                        const isSelected = selectedPatient?.cpf === patient.cpf;
+                        return (
+                          <button
+                            key={patient.cpf}
+                            onClick={() => setSelectedPatient(patient)}
+                            className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100'
+                                : 'bg-zinc-50/50 dark:bg-zinc-950/20 border-zinc-200/30 dark:border-zinc-800/30 text-zinc-650 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700'
+                            }`}
+                          >
+                            <div className="font-semibold text-xs">{patient.name}</div>
+                            <div className="text-[10px] text-zinc-450 dark:text-zinc-500 mt-1">CPF: {patient.cpf}</div>
+                            <div className="text-[10px] text-zinc-450 dark:text-zinc-500">{patient.info}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Right Column: Workspaces */}
+                  <div className="flex-1 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 p-6 flex flex-col min-h-[400px]">
+                    {!selectedPatient ? (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-4">
+                        <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 text-lg">
+                          👤
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 font-sans">Nenhum paciente selecionado</h3>
+                          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 max-w-xs leading-normal">
+                            Selecione um paciente na lista lateral para carregar os prontuários e receituários no contexto clínico dele.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col gap-6">
+                        {/* Selected Patient Banner */}
+                        <div className="flex justify-between items-center bg-zinc-50/80 dark:bg-zinc-950/30 border border-zinc-100 dark:border-zinc-850 p-4 rounded-2xl">
+                          <div>
+                            <span className="text-[10px] font-bold text-aura-violet uppercase tracking-wider">Atendimento Ativo</span>
+                            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mt-0.5">{selectedPatient.name}</h2>
+                          </div>
+                          <div className="text-right text-xs text-zinc-400 dark:text-zinc-500">
+                            <div>CPF: {selectedPatient.cpf}</div>
+                          </div>
+                        </div>
+
+                        {/* Split Web Components Workspace */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 items-stretch">
+                          {/* Aura Caso Custom Element */}
+                          <div className="flex flex-col gap-2 h-full">
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Prontuário (Aura Caso)</span>
+                            <div className="flex-1 border border-zinc-100 dark:border-zinc-850 rounded-2xl overflow-hidden min-h-[350px] bg-white">
+                              <aura-caso-app
+                                tenant-id="clinica-luz"
+                                patient-cpf={selectedPatient.cpf}
+                                access-token="stub-access-token"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Aura Pulso Custom Element */}
+                          <div className="flex flex-col gap-2 h-full">
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Receituário (Aura Pulso)</span>
+                            <div className="flex-1 border border-zinc-100 dark:border-zinc-850 rounded-2xl overflow-hidden min-h-[350px] bg-white">
+                              <aura-pulso-app
+                                tenant-id="clinica-luz"
+                                patient-cpf={selectedPatient.cpf}
+                                access-token="stub-access-token"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Overlay Sign Modal (Aura Traço) */}
+                {isSigningModalOpen && (
+                  <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-zinc-900 rounded-3xl p-6 shadow-2xl relative max-w-md w-full border border-zinc-800 animate-fade-in">
+                      <button
+                        onClick={() => setIsSigningModalOpen(false)}
+                        className="absolute top-4 right-4 text-zinc-400 hover:text-white text-lg font-bold cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                      <div className="mb-4">
+                        <span className="text-[10px] font-bold text-aura-pink uppercase tracking-widest">Etapa de Assinatura</span>
+                        <h2 className="text-base font-light text-white mt-1">Autorizar Prescrição ICP-Brasil</h2>
+                      </div>
+                      <aura-traco-app
+                        tenant-id="clinica-luz"
+                        doctor-cpf="123.456.789-00"
+                        doctor-crm="123456"
+                        doctor-crm-uf="SP"
+                        document-hash={currentHashToSign || ''}
+                        access-token="stub-access-token"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Toast Notification */}
+                {toastMessage && (
+                  <div className="fixed bottom-6 right-6 z-50 bg-zinc-900 text-white px-5 py-4.5 rounded-2xl shadow-xl border border-zinc-800 flex items-center gap-3 animate-slide-in">
+                    <div className="w-2 h-2 rounded-full bg-aura-violet animate-pulse" />
+                    <span className="text-xs font-semibold">{toastMessage}</span>
+                  </div>
+                )}
               </div>
             )}
 
