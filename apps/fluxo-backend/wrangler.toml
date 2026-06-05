@@ -1,0 +1,23 @@
+name = "aura-fluxo-backend"
+main = "src/index.ts"
+compatibility_date = "2026-06-02"
+
+[[d1_databases]]
+binding = "D1_MAIN"
+database_name = "aura-db-main"
+database_id = "local-aura-db-main-id"
+migrations_dir = "migrations"
+
+[[d1_databases]]
+binding = "D1_ANALYTICS"
+database_name = "aura-db-analytics"
+database_id = "local-aura-db-analytics-id"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "REVOCATION_KV"
+id = "local-revocation-kv-id"
+
+[[r2_buckets]]
+binding = "SYNC_BUCKET"
+bucket_name = "aura-sync-bucket"

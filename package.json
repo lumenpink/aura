@@ -6,9 +6,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:frontend": "bun --env-file=.env.local --cwd apps/frontend dev --port 12201 --strictPort",
-    "dev:backend": "bun --env-file=.env.local --cwd apps/backend dev --port 12202",
-    "dev": "concurrently -n \"front,back\" -c \"blue,magenta\" \"bun dev:frontend\" \"bun dev:backend\"",
+    "dev:fluxo-frontend": "bun --env-file=.env.local --cwd apps/fluxo-frontend dev --port 12201 --strictPort",
+    "dev:fluxo-backend": "bun --env-file=.env.local --cwd apps/fluxo-backend dev --port 12202",
+    "dev:traco-frontend": "bun --env-file=.env.local --cwd apps/traco-frontend dev --port 12301 --strictPort",
+    "dev:traco-backend": "bun --env-file=.env.local --cwd apps/traco-backend dev --port 12302",
+    "dev:pulso-frontend": "bun --env-file=.env.local --cwd apps/pulso-frontend dev --port 12401 --strictPort",
+    "dev:pulso-backend": "bun --env-file=.env.local --cwd apps/pulso-backend dev --port 12402",
+    "dev:fluxo": "concurrently -n \"fluxo-front,fluxo-back\" -c \"blue,magenta\" \"bun dev:fluxo-frontend\" \"bun dev:fluxo-backend\"",
+    "dev:traco": "concurrently -n \"traco-front,traco-back\" -c \"cyan,green\" \"bun dev:traco-frontend\" \"bun dev:traco-backend\"",
+    "dev:pulso": "concurrently -n \"pulso-front,pulso-back\" -c \"yellow,red\" \"bun dev:pulso-frontend\" \"bun dev:pulso-backend\"",
+    "dev": "concurrently -n \"fluxo-front,fluxo-back\" -c \"blue,magenta\" \"bun dev:fluxo-frontend\" \"bun dev:fluxo-backend\"",
     "test": "bun test",
     "test:shared": "bun test test/shared",
     "test:backend": "bun test test/backend",
@@ -23,6 +30,7 @@
     "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260602.1",
     "bun-types": "^1.3.14",
     "drizzle-orm": "^0.30.10",
     "hono": "^4.12.23"

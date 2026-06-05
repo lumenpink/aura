@@ -1,0 +1,18 @@
+{
+  "name": "@aura/traco-backend",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "npx wrangler dev src/index.ts",
+    "deploy": "npx wrangler deploy src/index.ts"
+  },
+  "dependencies": {
+    "hono": "^4.12.23",
+    "@aura/shared": "workspace:*",
+    "drizzle-orm": "^0.30.10"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260602.1",
+    "wrangler": "^4.96.0"
+  }
+}

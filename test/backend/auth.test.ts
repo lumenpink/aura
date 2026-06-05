@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "bun:test";
-import app from "../../apps/backend/src/index";
+import app from "../../apps/fluxo-backend/src/index";
 import { sign } from "hono/jwt";
 
 // In-memory mock stores for test state isolation
@@ -512,17 +512,17 @@ describe("Backend Authentication Router", () => {
   describe("7. Path and Domain Isolation", () => {
     const isolatedEnv = {
       ...env,
-      API_DOMAIN: "api.clinicaexemplo.com.br"
+      ALLOWED_ORIGINS: "https://app.clinicaexemplo.com.br"
     };
 
-    it("should accept request on /auth with correct Host header", async () => {
+    it("should accept request on /auth with allowed origin", async () => {
       const res = await app.request(
         "/auth/login",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Host": "api.clinicaexemplo.com.br"
+            "Origin": "https://app.clinicaexemplo.com.br"
           },
           body: JSON.stringify({ username: "123.456.789-09", password: "senha123" })
         },
@@ -531,14 +531,14 @@ describe("Backend Authentication Router", () => {
       expect(res.status).toBe(200);
     });
 
-    it("should reject request with incorrect Host header on /auth routes", async () => {
+    it("should reject request with incorrect origin on /auth routes", async () => {
       const res = await app.request(
         "/auth/login",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Host": "invalid-host.com"
+            "Origin": "https://invalid-host.com"
           },
           body: JSON.stringify({ username: "123.456.789-09", password: "senha123" })
         },
@@ -546,8 +546,8 @@ describe("Backend Authentication Router", () => {
       );
       expect(res.status).toBe(403);
       const data: any = await res.json();
-      expect(data.error).toBe("Acesso negado");
-      expect(data.code).toBe("JQ487");
+      expect(data.error).toBe("Origem não permitida");
+      expect(data.code).toBe("JQ488");
     });
   });
 

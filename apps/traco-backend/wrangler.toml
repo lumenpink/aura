@@ -1,0 +1,23 @@
+name = "aura-traco-backend"
+main = "src/index.ts"
+compatibility_date = "2026-06-02"
+
+[[d1_databases]]
+binding = "D1_MAIN"
+database_name = "aura-traco-db-main"
+database_id = "local-aura-traco-db-main-id"
+migrations_dir = "migrations"
+
+[[d1_databases]]
+binding = "D1_ANALYTICS"
+database_name = "aura-traco-db-analytics"
+database_id = "local-aura-traco-db-analytics-id"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "REVOCATION_KV"
+id = "local-traco-revocation-kv-id"
+
+[[r2_buckets]]
+binding = "SYNC_BUCKET"
+bucket_name = "aura-traco-sync-bucket"

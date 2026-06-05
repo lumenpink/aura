@@ -27,10 +27,17 @@ bun dev
 
 Para espelhar a produção localmente sem onerar a rede ou gerar custos, o monorepo Aura emula toda a infraestrutura na máquina de desenvolvimento:
 
-- **Persistência Relacional**: O Cloudflare D1 local roda em arquivos SQLite físicos salvos no diretório `.wrangler/state/v3/d1`.
-- **Roteamento de Subdomínios**: Mapeado por meio de túneis locais ou arquivos de hosts do sistema (`/etc/hosts` ou similar):
-  - `app.clinicaexemplo.com.br` -> Direcionado para o Vite na porta `12201`.
-  - `api.clinicaexemplo.com.br` -> Direcionado para o Wrangler na porta `12202` (caminhos operacionais sob `/api/*` e autenticação sob `/auth/*`).
+- **Persistência Relacional**: O Cloudflare D1 local de cada backend roda em seus arquivos SQLite físicos correspondentes salvos nos respectivos diretórios `.wrangler/state/v3/d1` sob a pasta de cada aplicativo.
+- **Roteamento de Domínios Locais**: Mapeado por meio de portas ou mapeamento de hosts locais (`localhost`):
+  - **Aura Fluxo**:
+    - Frontend: `fluxo.localhost:12201` (porta do Vite `12201`)
+    - API Backend: `fluxo-api.localhost:12202` (porta do Wrangler `12202`)
+  - **Aura Traço**:
+    - Frontend: `traco.localhost:12301` (porta do Vite `12301`)
+    - API Backend: `traco-api.localhost:12302` (porta do Wrangler `12302`)
+  - **Aura Pulso**:
+    - Frontend: `pulso.localhost:12401` (porta do Vite `12401`)
+    - API Backend: `pulso-api.localhost:12402` (porta do Wrangler `12402`)
 
 ---
 

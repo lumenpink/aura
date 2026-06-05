@@ -15,6 +15,13 @@ app.use('*', async (c, next) => {
   const allowed = parsedOrigins.success ? parsedOrigins.data : '';
   const allowedOrigins = allowed ? allowed.split(',').map(o => o.trim()) : [];
 
+  const origin = c.req.header('Origin');
+  
+  // Strict CORS: If origin is present (browser cross-origin request) but not in allowedOrigins, reject with JQ488
+  if (origin && !allowedOrigins.includes(origin)) {
+    return c.json({ error: 'Origem não permitida', code: 'JQ488' }, 403);
+  }
+
   return cors({
     origin: (origin) => {
       if (allowedOrigins.includes(origin)) {
@@ -25,29 +32,19 @@ app.use('*', async (c, next) => {
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
-    maxAge: 86400, // Cache preflight requests for 24 hours
+    maxAge: 86400, // Access-Control-Max-Age
   })(c, next);
 });
 
 // 1. Setup the Dedicated Authentication Sub-router
 const authRouter = new Hono<{ Bindings: Bindings }>();
 
-// Global middleware for the Authentication sub-router to enforce API_DOMAIN and path isolation
+// Global middleware for the Authentication sub-router to enforce strict path routing and prevent leakage
 authRouter.use('*', async (c, next) => {
-  const reqHost = c.req.header('host');
-  const expectedApiDomainRaw = c.env.API_DOMAIN;
-  const parsedDomain = domainSchema.safeParse(expectedApiDomainRaw);
-  const expectedApiDomain = parsedDomain.success ? parsedDomain.data : undefined;
-
-  if (expectedApiDomain && reqHost !== expectedApiDomain) {
-    return c.json({ error: 'Acesso negado', code: 'JQ487' }, 403);
-  }
-
   const path = c.req.path;
   if (!path.startsWith('/auth')) {
-    return c.json({ error: 'Acesso negado', code: 'JQ487_PATH' }, 403);
+    return c.json({ error: 'Acesso negado - Caminho inválido', code: 'JQ487_PATH' }, 403);
   }
-
   await next();
 });
 
@@ -57,17 +54,12 @@ authRouter.route('/', auth);
 // 2. Setup the Dedicated Clinical API Sub-router
 const apiRouter = new Hono<{ Bindings: Bindings }>();
 
-// Global middleware for the Clinical API sub-router to enforce API_DOMAIN isolation
+// Global middleware for the Clinical API sub-router to enforce routing integrity
 apiRouter.use('*', async (c, next) => {
-  const reqHost = c.req.header('host');
-  const expectedApiDomainRaw = c.env.API_DOMAIN;
-  const parsedDomain = domainSchema.safeParse(expectedApiDomainRaw);
-  const expectedApiDomain = parsedDomain.success ? parsedDomain.data : undefined;
-
-  if (expectedApiDomain && reqHost !== expectedApiDomain) {
-    return c.json({ error: 'Acesso negado', code: 'JQ488' }, 403);
+  const path = c.req.path;
+  if (!path.startsWith('/api')) {
+    return c.json({ error: 'Acesso negado - Caminho operacional inválido', code: 'JQ488_PATH' }, 403);
   }
-
   await next();
 });
 

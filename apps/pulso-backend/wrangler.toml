@@ -1,23 +1,23 @@
-name = "aura-backend"
+name = "aura-pulso-backend"
 main = "src/index.ts"
 compatibility_date = "2026-06-02"
 
 [[d1_databases]]
 binding = "D1_MAIN"
-database_name = "aura-db-main"
-database_id = "local-aura-db-main-id"
+database_name = "aura-pulso-db-main"
+database_id = "local-aura-pulso-db-main-id"
 migrations_dir = "migrations"
 
 [[d1_databases]]
 binding = "D1_ANALYTICS"
-database_name = "aura-db-analytics"
-database_id = "local-aura-db-analytics-id"
+database_name = "aura-pulso-db-analytics"
+database_id = "local-aura-pulso-db-analytics-id"
 migrations_dir = "migrations"
 
 [[kv_namespaces]]
 binding = "REVOCATION_KV"
-id = "local-revocation-kv-id"
+id = "local-pulso-revocation-kv-id"
 
 [[r2_buckets]]
 binding = "SYNC_BUCKET"
-bucket_name = "aura-sync-bucket"
+bucket_name = "aura-pulso-sync-bucket"

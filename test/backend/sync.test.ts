@@ -1,10 +1,10 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { drizzle } from "drizzle-orm/d1";
-import { DrizzleAppointmentRepository } from "../../apps/backend/src/infrastructure/repositories/DrizzleAppointmentRepository";
-import { Appointment } from "../../apps/backend/src/domain/entities/Appointment";
-import { syncR2ToAnalytics } from "../../apps/backend/src/utils/sync";
-import app from "../../apps/backend/src/index";
-import type { Bindings } from "../../apps/backend/src/types";
+import { DrizzleAppointmentRepository } from "../../apps/fluxo-backend/src/infrastructure/repositories/DrizzleAppointmentRepository";
+import { Appointment } from "../../apps/fluxo-backend/src/domain/entities/Appointment";
+import { syncR2ToAnalytics } from "../../apps/fluxo-backend/src/utils/sync";
+import app from "../../apps/fluxo-backend/src/index";
+import type { Bindings } from "../../apps/fluxo-backend/src/types";
 
 // --- D1 MOCK CLASS ---
 class MockD1Database {

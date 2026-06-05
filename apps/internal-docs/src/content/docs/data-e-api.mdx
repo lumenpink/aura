@@ -77,11 +77,11 @@ Fila de contingência para registros cuja replicação assíncrona falhou.
 
 ## 3. Contratos de API (Hono RPC)
 
-Todos os endpoints da API são tipados e protegidos por isolamento de rotas e domínios via sub-roteadores. Qualquer chamada que viole as regras de domínio (`API_DOMAIN`) ou de caminho de diretório (`/auth` vs `/api`) será rejeitada com código HTTP `403` no middleware correspondente.
+Todos os endpoints da API são tipados e protegidos por isolamento de caminhos e validação de origem. Requisições que violem as regras de CORS ou tentem acessar rotas fora do escopo do roteador Hono correspondente serão bloqueadas com códigos HTTP `403`.
 
-### Sub-roteador: `/auth` (Restrito ao caminho `/auth` no `API_DOMAIN`)
+### Sub-roteador: `/auth` (Restrito ao caminho `/auth/*` da API)
 
-Gerencia a autenticação e tokens de sessão. Rejeita tráfego fora do domínio da API ou fora do diretório de autenticação `/auth` com o código de erro **`JQ487`** (ou **`JQ487_PATH`** se o caminho não for correspondente).
+Gerencia a autenticação e tokens de sessão. Rejeita tráfego cujo caminho de acesso lógico não corresponda a `/auth/*` com o código de erro **`JQ487_PATH`** (Caminho de Autenticação Inválido).
 
 #### 1. `POST /auth/login`
 - **Payload de Entrada (JSON)**:
@@ -106,7 +106,7 @@ Gerencia a autenticação e tokens de sessão. Rejeita tráfego fora do domínio
     }
   }
   ```
-  - *Cookies*: Configura `refreshToken` em cookie HttpOnly, `Secure`, `SameSite=Strict` e com escopo limitado ao caminho `/auth` no domínio da API (`path: "/auth"`).
+  - *Cookies*: Configura `refreshToken` em cookie HttpOnly, `Secure`, `SameSite=Strict` e com escopo limitado ao caminho `/auth` (`path: "/auth"`).
 
 #### 2. `POST /auth/refresh`
 - **Payload de Entrada**:
@@ -122,9 +122,9 @@ Gerencia a autenticação e tokens de sessão. Rejeita tráfego fora do domínio
 
 ---
 
-### Sub-roteador: `/api` (Restrito ao caminho `/api` no `API_DOMAIN`)
+### Sub-roteador: `/api` (Restrito ao caminho `/api/*` da API)
 
-Gerencia as operações clínicas do dia a dia. Rejeita acessos fora do domínio da API com o código de erro **`JQ488`**.
+Gerencia as operações clínicas do dia a dia. Rejeita requisições cross-origin não permitidas (CORS origin inválido) com o código de erro **`JQ488`** (Origem Não Permitida) ou caminhos operacionais incorretos com **`JQ488_PATH`**.
 
 #### 1. `GET /api/patients`
 - **Descrição**: Retorna a lista de pacientes cadastrados no silo.

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, mock, afterEach } from "bun:test";
-import { HttpClient } from "../../apps/frontend/src/modules/core/api/httpClient";
+import { HttpClient } from "../../apps/fluxo-frontend/src/modules/core/api/httpClient";
 
 // --- MOCK BROADCASTCHANNEL ---
 class MockBroadcastChannel {
