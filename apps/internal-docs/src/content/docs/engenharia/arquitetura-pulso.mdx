@@ -71,7 +71,9 @@ export const prescriptions = sqliteTable('prescriptions', {
   // Assinatura Digital ICP-Brasil (Padrão CFM/ITI)
   digitalSignature: text('digital_signature'), // Hash assinado PKCS#7 / CMS
   signedAt: integer('signed_at', { mode: 'timestamp' }),
-  payloadHash: text('payload_hash') // Hash SHA-256 do payload original que foi assinado
+  payloadHash: text('payload_hash'), // Hash SHA-256 do payload original que foi assinado
+  previousHash: text('previous_hash').notNull(),
+  currentHash: text('current_hash').notNull()
 });
 
 // 2. Tabela de Itens da Prescrição (Medicamentos e Posologia)

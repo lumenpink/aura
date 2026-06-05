@@ -19,6 +19,11 @@ const PAGE_ORDERS: Record<string, string[]> = {
     "engenharia/sse-reatividade/index.html",
     "engenharia/codigos-erro/index.html",
     "engenharia/geracao-pdf/index.html",
+    "engenharia/arquitetura-pulso/index.html",
+    "engenharia/arquitetura-caso/index.html",
+    "engenharia/arquitetura-traco/index.html",
+    "engenharia/aderencia-tecnica/index.html",
+    "engenharia/roadmap-execucao/index.html",
   ],
   "user-manual": [
     "index.html",

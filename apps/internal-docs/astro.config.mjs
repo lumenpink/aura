@@ -43,6 +43,8 @@ export default defineConfig({
         { slug: 'engenharia/arquitetura-pulso' },
         { slug: 'engenharia/arquitetura-caso' },
         { slug: 'engenharia/arquitetura-traco' },
+        { slug: 'engenharia/aderencia-tecnica' },
+        { slug: 'engenharia/roadmap-execucao' },
       ],
     }),
     react(),

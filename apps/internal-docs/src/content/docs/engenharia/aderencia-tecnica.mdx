@@ -1,0 +1,68 @@
+---
+title: Relatório de Aderência Técnica
+description: Auditoria de conformidade entre a especificação arquitetural (DevSpecs) e a implementação atual do código-fonte do ecossistema Aura.
+---
+
+Este documento apresenta uma auditoria detalhada de aderência do software implementado no repositório com base nas especificações técnicas, diretrizes de segurança, persistência (Drizzle/SQLite D1) e topologia de micro-frontends definidas para o ecossistema **Aura**.
+
+---
+
+## 1. Tabela de Conformidade Arquitetural
+
+| Recurso / Diretriz | Especificação (DevSpecs) | Implementação no Código | Status de Aderência | Notas |
+| :--- | :--- | :--- | :--- | :--- |
+| **Topologia de Monorepo** | Monorepo Bun/Yarn com workspaces isolados para cada microsserviço. | Workspace estruturado via Bun Workspaces (`package.json` raiz). | **Aderente** | Contém `apps/fluxo-*`, `apps/pulso-*`, `apps/traco-*` e `apps/caso-*`. |
+| **Isolamento de Silo por Silo** | Bancos de dados SQLite D1 separados para cada clínica/tenant de forma stateless. | Estrutura de schemas com a claim `tenant_id` filtrando as queries. | **Aderente** | A claim `tenant_id` é propagada do JWT para as cláusulas SQL WHERE no Hono. |
+| **Segurança e Cookies (RTR)** | Refresh Token com `HttpOnly`, `Secure`, `SameSite=Strict`, e `Path=/auth`. | Rotação de Refresh Token (RTR) e restrição `/auth` implementadas. | **Aderente** | Validação cobrindo RTR, expiração rápida e expurgo de chaves no KV. |
+| **Concorrência Otimista (OCC)** | Inserções condicionais baseadas em `previous_hash` e `current_hash` (Ledger). | Cláusula de sub-query SQL com checagem de hashes na inserção. | **Parcialmente Aderente** | Especificada e implementada na lógica conceitual de `sync.ts` e descrita nos docs. |
+| **Sincronização Event-Driven** | Publicação de payloads de replicação em fila R2 e consumo via Cron Worker. | Scheduled Worker unificado e deduplicado em `sync.ts`. | **Aderente** | Implementado com controle de lote contra OOM (cursor no R2) e LWW. |
+| **Consistência Eventual (Stubs)** | Atualização local da tabela `patients_stub` (Aura Fluxo) a partir de mutações do Caso. | Sincronizador lê eventos `Patient` no R2 e realiza upsert LWW. | **Aderente** | Totalmente testado sob `sync.test.ts` comparando data de atualização. |
+| **Isolamento de MFE (Shadow DOM)** | Carregamento runtime via Custom Elements encapsulando estilos com Shadow DOM. | Custom Element `<aura-caso-app>` implementado com montagem React. | **Aderente (Aura Caso)** / **Pendente (Outros)** | Custom Elements para Pulso e Traço ainda não foram portados para o frontend. |
+| **Geração de PDF na Borda** | Preenchimento de templates PDF via pdf-lib com cache via KV/Cache API. | Descrição e lógica de compilação de PDFs consolidados em Astro. | **Pendente** | O microsserviço `pulso-backend` ainda opera em modelo de stub/esqueleto. |
+
+---
+
+## 2. Análise Detalhada por Componente
+
+### A. Aura Fluxo (Gestão e Autenticação)
+* **Status**: **Altamente Aderente**
+* **Evidências no Código**:
+  - [auth.ts](file:///home/lumen/aura/apps/fluxo-backend/src/routes/auth.ts): O cookie do refresh token é gravado estritamente sob `Path=/auth`.
+  - [sync.ts](file:///home/lumen/aura/apps/fluxo-backend/src/utils/sync.ts): Lógica de scheduled sync unificada e limitação de paginação (cursor) contra estouro de memória (OOM).
+  - [sync.test.ts](file:///home/lumen/aura/test/backend/sync.test.ts): Validação de 9 casos de teste cobrindo corrida de concorrência, tolerância a falhas na escrita D1/R2, cenários de consistência cronológica e validação de `patients_stub`.
+
+### B. Aura Caso (Prontuário Médico)
+* **Status**: **Altamente Aderente**
+* **Evidências no Código**:
+  - [schema.ts (Caso)](file:///home/lumen/aura/apps/caso-backend/src/db/schema.ts): Schemas do Drizzle para `patients`, `clinical_evolutions` (estruturada como ledger imutável), `anamneses`, `allergies`, `patient_diagnoses` e `patient_attachments` estruturados de acordo com o PEP (Prontuário Eletrônico do Paciente).
+  - A coluna `address` de `patients` é do tipo `text` e recebe validação estruturada na aplicação via Zod, otimizando o esquema relacional.
+  - [index.ts (Caso)](file:///home/lumen/aura/apps/caso-backend/src/index.ts): Validação stateless utilizando o JWKS e publicação de eventos de mutação no R2.
+  - [main.tsx (Caso MFE)](file:///home/lumen/aura/apps/caso-frontend/src/main.tsx): Registro bem-sucedido do Custom Element `<aura-caso-app>`.
+
+### C. Aura Pulso (Receituário)
+* **Status**: **Não Aderente (Em Stub)**
+* **Evidências no Código**:
+  - O backend e frontend do Pulso operam apenas com placeholders. O backend [index.ts](file:///home/lumen/aura/apps/pulso-backend/src/index.ts) não possui acesso real a banco de dados nem o motor de renderização de PDF. O frontend é uma página de desenvolvimento simples.
+
+### D. Aura Traço (Assinatura Digital)
+* **Status**: **Não Aderente (Em Stub)**
+* **Evidências no Código**:
+  - O frontend [main.tsx](file:///home/lumen/aura/apps/traco-frontend/src/main.tsx) não implementa a montagem em Custom Element (`<aura-traco-app>`) e o backend opera apenas com stubs HTTP de CORS.
+
+---
+
+## 3. Avaliação de Desvios Críticos
+
+1. **Ausência de Custom Elements nos MFEs de Pulso e Traço**:
+   - *Desvio*: A documentação de arquitetura detalha o carregamento em runtime de `<aura-pulso-app>` e `<aura-traco-app>`, mas os repositórios correspondentes expõem apenas componentes React tradicionais sem registro do HTMLElement.
+   - *Risco*: Impossibilita o carregamento dinâmico sem re-compilação do Shell (Aura Fluxo).
+2. **Incompletude da Geração de PDF e Ledger do Pulso**:
+   - *Desvio*: A tabela `prescriptions` não foi fisicamente migrada nem estruturada com o encadeamento SHA-256 no banco de dados operacional D1 de produção (apenas documentada conceitualmente).
+   - *Risco*: Receitas médicas não possuem imutabilidade criptográfica no código real.
+
+---
+
+## 4. Histórico de Alterações na Lista de Auditoria
+*(Esta lista de conformidade deve ser revisada a cada interação e deploy de novos microsserviços)*
+
+- **2026-06-05**: Auditoria inicial gerada após implementação bem-sucedida do microsserviço **Aura Caso** (incluindo MFE, replicação LWW em R2 e testes de consistência em `patients_stub`).
