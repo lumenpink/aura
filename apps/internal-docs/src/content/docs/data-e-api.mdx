@@ -15,10 +15,9 @@ Para garantir segurança estrita, conformidade com a LGPD e mitigar contenções
 - **CQRS Lite (Segregação de Leitura/Escrita)**:
   - **`D1_MAIN` (OLTP - Operacional)**: Focado em transações de alta frequência (login, agendamentos, prontuários).
   - **`D1_ANALYTICS` (OLAP - Relatórios)**: Focado em consultas pesadas, agregações e relatórios.
-- **Sincronização Assíncrona Eventual**: Ocorre de forma desacoplada via **Cloudflare R2** e **Cron Triggers**:
-  - As operações de escrita gravam síncronamente no `D1_MAIN` e salvam o payload de sincronização em formato JSON em um bucket R2 (`SYNC_BUCKET`) sob o prefixo `queue/`.
-  - Se a gravação no R2 falhar por erro de rede/plataforma, a falha é registrada na tabela `sync_fallbacks` do `D1_MAIN` para contingência.
-  - Um Scheduled Worker (Cron) roda a cada 1 minuto, adquire um lock distribuído temporário no KV (`lock:sync_analytics` com TTL de 5min contra travamentos), processa os payloads do R2 em lotes para otimizar a escrita no `D1_ANALYTICS` e remove os arquivos da fila após o sucesso da sincronização.
+- Um Scheduled Worker (Cron) roda a cada 1 minuto, adquire um lock distribuído temporário no KV (`lock:sync_analytics` com TTL de 5min contra travamentos) e executa a reconciliação eventual em duas etapas sequenciais:
+  1. **Processamento da tabela `sync_fallbacks`**: Efetua um `SELECT` no `D1_MAIN` para buscar transações cujos payloads falharam na escrita original para o R2. Para cada falha, obtém o estado atual da entidade no `D1_MAIN`, grava-o no `D1_ANALYTICS` e remove o log de contingência da tabela `sync_fallbacks`.
+  2. **Processamento da Fila do R2**: Varre o bucket R2 (`SYNC_BUCKET`) sob `queue/`, carrega e ordena os eventos pendentes, executa a carga analítica no `D1_ANALYTICS` e deleta os objetos bem-sucedidos do bucket.
 
 ```mermaid
 sequenceDiagram
@@ -39,9 +38,14 @@ sequenceDiagram
     
     rect rgb(30, 20, 40)
         Note over Cron, D1Analytics: Reconciliação (Cron - Eventual)
-        Cron->>R2: Lista e lê arquivos JSON pendentes
-        Cron->>D1Analytics: Gravação em Lote (Batch Insert)
-        Cron->>R2: Deleta arquivos processados de R2
+        Cron->>D1Main: 1. SELECT na tabela sync_fallbacks
+        Cron->>D1Main: 2. Carrega o estado atual da entidade (OLTP)
+        Cron->>D1Analytics: 3. Upsert do registro mais recente (OLAP)
+        Cron->>D1Main: 4. DELETE no log resolvido em sync_fallbacks
+        
+        Cron->>R2: 5. Lista e lê arquivos JSON pendentes no R2
+        Cron->>D1Analytics: 6. Gravação em Lote (Batch Insert)
+        Cron->>R2: 7. Deleta arquivos processados do R2
     end
 ```
 

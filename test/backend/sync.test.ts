@@ -17,7 +17,6 @@ class MockD1Database {
       if (this.forceFail) {
         throw new Error("Simulated D1 Failure");
       }
-      // Drizzle generates SQL using placeholders. We bind parameters in makeExecutor.
       const query = sql.replace(/\s+/g, " ").trim();
       const cleanQuery = query.replace(/[`"]/g, "").toLowerCase();
       this.runCalls.push({ sql: query, params: this.boundArgs });
@@ -48,19 +47,62 @@ class MockD1Database {
         this.rows.push({ id, entityName, recordId, error, createdAt, isFallback: true });
       }
 
+      // Handle delete queries
+      if (cleanQuery.includes("delete from sync_fallbacks")) {
+        const idToDelete = this.boundArgs[0];
+        if (idToDelete) {
+          this.rows = this.rows.filter((r) => r.id !== idToDelete);
+        }
+      }
+
       return { success: true };
     };
 
     const makeExecutor = (boundArgs: any[]) => {
-      return {
+      const executor = {
         run,
         first: async () => null,
-        all: async () => ({ results: [] }),
+        all: async () => {
+          if (this.forceFail) {
+            throw new Error("Simulated D1 Failure");
+          }
+          const query = sql.replace(/\s+/g, " ").trim();
+          const cleanQuery = query.replace(/[`"]/g, "").toLowerCase();
+          
+          if (cleanQuery.includes("select")) {
+            if (cleanQuery.includes("sync_fallbacks")) {
+              const results = this.rows.filter((r) => r.isFallback === true);
+              return { results };
+            }
+            if (cleanQuery.includes("appointments")) {
+              // If there's a filter by ID
+              if (cleanQuery.includes("where id =") || cleanQuery.includes("where appointments.id =")) {
+                const idFilter = boundArgs[0];
+                const results = this.rows.filter((r) => r.id === idFilter && !r.isFallback);
+                return { results };
+              }
+              const results = this.rows.filter((r) => !r.isFallback);
+              return { results };
+            }
+          }
+          return { results: [] };
+        },
+        raw: async () => {
+          const { results } = await executor.all();
+          return results.map((row: any) => {
+            if (row.isFallback) {
+              return [row.id, row.entityName, row.recordId, row.error, row.createdAt];
+            } else {
+              return [row.id, row.patientName, row.appointmentDate, row.status, row.createdAt];
+            }
+          });
+        },
         bind: (...args: any[]) => {
           this.boundArgs = args;
           return makeExecutor(args);
         },
       };
+      return executor;
     };
 
     return makeExecutor([]);
@@ -307,5 +349,152 @@ describe("CQRS Eventual Consistency via R2 & Scheduled Cron", () => {
     // Verify R2 file is NOT deleted (size is still 1) and delete was NOT called
     expect(r2Bucket.store.size).toBe(1);
     expect(r2Bucket.deleteCalls).toBe(0);
+  });
+
+  it("should reconcile sync_fallbacks records to D1_ANALYTICS and delete them from D1_MAIN", async () => {
+    // 1. Seed operational record in D1_MAIN
+    const apptDate = new Date("2026-06-10T10:00:00Z");
+    const createDate = new Date("2026-06-04T12:00:00Z");
+    dbMain.rows.push({
+      id: "appt-fallback-reconcile",
+      patientName: "Fallback Reconciled Patient",
+      appointmentDate: apptDate,
+      status: "CONFIRMED",
+      createdAt: createDate,
+    });
+
+    // 2. Seed fallback record in D1_MAIN sync_fallbacks
+    const fallbackId = "fallback-log-123";
+    dbMain.rows.push({
+      id: fallbackId,
+      entityName: "Appointment",
+      recordId: "appt-fallback-reconcile",
+      error: "R2 Write Failure: Simulated failure",
+      createdAt: createDate,
+      isFallback: true,
+    });
+
+    // 3. Trigger sync (which handles fallbacks first)
+    await syncR2ToAnalytics(env);
+
+    // 4. Verify record was reconciled to D1_ANALYTICS
+    const reconciled = dbAnalytics.rows.find(r => r.id === "appt-fallback-reconcile");
+    expect(reconciled).toBeDefined();
+    expect(reconciled.patientName).toBe("Fallback Reconciled Patient");
+    expect(reconciled.status).toBe("CONFIRMED");
+
+    // 5. Verify fallback log was deleted from D1_MAIN sync_fallbacks
+    const fallbackLogExists = dbMain.rows.some((r) => r.id === fallbackId && r.isFallback === true);
+    expect(fallbackLogExists).toBe(false);
+  });
+
+  it("should handle Scenario 1: fallback at T1 (10h), R2 at T2 (9h) -> final state is 9h (R2)", async () => {
+    // T1: 10h fallback
+    const t1 = new Date("2026-06-04T12:00:00Z");
+    const date10h = new Date("2026-06-10T10:00:00Z");
+    
+    // Seed fallback log representing state at T1 (10h)
+    dbMain.rows.push({
+      id: "fallback-t1",
+      entityName: "Appointment",
+      recordId: "appt-scen-1",
+      error: "R2 Write Failure: Simulated failure at T1",
+      createdAt: t1,
+      isFallback: true,
+    });
+
+    // T2: 9h in R2
+    const t2 = new Date("2026-06-04T12:05:00Z");
+    const date9h = new Date("2026-06-10T09:00:00Z");
+    const eventPayload = {
+      entityName: "Appointment",
+      action: "upsert",
+      data: {
+        id: "appt-scen-1",
+        patientName: "Patient Scenario 1",
+        appointmentDate: date9h.toISOString(),
+        status: "CONFIRMED",
+        createdAt: t1.toISOString(),
+      },
+      timestamp: t2.toISOString(),
+    };
+    await r2Bucket.put(`queue/appointment_appt-scen-1_${t2.getTime()}.json`, JSON.stringify(eventPayload));
+
+    // Also seed D1_MAIN with the final state at T2 (9h)
+    dbMain.rows.push({
+      id: "appt-scen-1",
+      patientName: "Patient Scenario 1",
+      appointmentDate: date9h,
+      status: "CONFIRMED",
+      createdAt: t1,
+    });
+
+    // Trigger sync
+    await syncR2ToAnalytics(env);
+
+    // Verify analytics contains 9h (latest R2 state)
+    const reconciled = dbAnalytics.rows.find(r => r.id === "appt-scen-1");
+    expect(reconciled).toBeDefined();
+    expect(new Date(reconciled.appointmentDate)).toEqual(date9h);
+
+    // Verify cleanup of both sources
+    expect(r2Bucket.store.size).toBe(0);
+    const fallbackExists = dbMain.rows.some(r => r.id === "fallback-t1" && r.isFallback === true);
+    expect(fallbackExists).toBe(false);
+  });
+
+  it("should handle Scenario 2: R2 at T1 (9h), fallback at T2 (10h) -> final state is 10h (D1_MAIN)", async () => {
+    // T1: 9h in R2
+    const t1 = new Date("2026-06-04T12:00:00Z");
+    const date9h = new Date("2026-06-10T09:00:00Z");
+    const eventPayload = {
+      entityName: "Appointment",
+      action: "upsert",
+      data: {
+        id: "appt-scen-2",
+        patientName: "Patient Scenario 2",
+        appointmentDate: date9h.toISOString(),
+        status: "CONFIRMED",
+        createdAt: t1.toISOString(),
+      },
+      timestamp: t1.toISOString(),
+    };
+    await r2Bucket.put(`queue/appointment_appt-scen-2_${t1.getTime()}.json`, JSON.stringify(eventPayload));
+
+    // T2: 10h fallback
+    const t2 = new Date("2026-06-04T12:05:00Z");
+    const date10h = new Date("2026-06-10T10:00:00Z");
+    
+    // Seed fallback log representing state at T2 (10h)
+    dbMain.rows.push({
+      id: "fallback-t2",
+      entityName: "Appointment",
+      recordId: "appt-scen-2",
+      error: "R2 Write Failure: Simulated failure at T2",
+      createdAt: t2,
+      isFallback: true,
+    });
+
+    // Seed D1_MAIN with final state at T2 (10h)
+    dbMain.rows.push({
+      id: "appt-scen-2",
+      patientName: "Patient Scenario 2",
+      appointmentDate: date10h,
+      status: "CONFIRMED",
+      createdAt: t1,
+    });
+
+    // Trigger sync
+    await syncR2ToAnalytics(env);
+
+    // Verify analytics contains 10h (latest state from D1_MAIN)
+    const reconciled = dbAnalytics.rows.find(r => r.id === "appt-scen-2");
+    expect(reconciled).toBeDefined();
+    expect(new Date(reconciled.appointmentDate)).toEqual(date10h);
+
+    // Verify cleanup of both sources
+    expect(r2Bucket.store.size).toBe(0);
+    const fallbackExists = dbMain.rows.some(r => r.id === "fallback-t2" && r.isFallback === true);
+    expect(fallbackExists).toBe(false);
   });
 });
