@@ -192,12 +192,16 @@ Caso o suporte de gravação em ambiente offline (intranet local na clínica ou 
 * **Design**: Adicionar colunas `updated_at` (UTC de alta precisão) e `version` (Logical Clock). Cada edição local incrementa a versão. O sincronizador usa esse vetor de versão para discernir de qual versão ancestral comum a alteração foi gerada.
 
 #### 4. Estratégia de Resolução de Conflitos (Deterministic Last-Write-Wins)
-* **Justificativa**: Quando dois nós offline modificam simultaneamente os dados de um agendamento ou prontuário, a nuvem deve resolver a divergência de forma determinística e segura.
+* **Justificativa**: Quando dois nós offline modificam simultaneamente os dados de uma entidade mutável (como um agendamento), a nuvem deve resolver a divergência de forma determinística e segura.
 * **Design**: 
   * Aplicar Last-Write-Wins (LWW) apenas se a linhagem causal for linear.
-  * Em caso de edições concorrentes sobrepostas (divergentes), a alteração do cliente offline deve ser gravada em uma tabela separada de **Conflitos Pendentes de Revisão**, gerando um alerta na interface para a equipe da clínica tomar a decisão clínica de qual registro manter.
+  * Em caso de edições concorrentes sobrepostas (divergentes), a alteração do cliente offline deve ser gravada em uma tabela separada de **Conflitos Pendentes de Revisão**, gerando um alerta na interface para a equipe da clínica tomar a decisão administrativa de qual registro manter.
 
-#### 5. Replicação de Conteúdo Rico via CRDTs (Conflict-free Replicated Data Types)
-* **Justificativa**: Textos longos e dinâmicos (como a evolução clínica em prontuários e receitas) não podem ser mesclados simplesmente escolhendo um dos lados do conflito, sob risco de perda de observações médicas importantes.
-* **Design**: Integração de algoritmos baseados em estado ou operações CRDT (como `Yjs` ou `Automerge`). As atualizações offline são salvas como buffers binários de operações diferenciais e mescladas de forma determinística no servidor de borda, preservando o histórico de digitação de ambos os lados sem requerer intervenção manual.
+#### 5. Imutabilidade Legal do Prontuário e Estratégia Append-Only (Adição Contínua)
+* **Justificativa**: Conforme a regulamentação do CFM (Conselho Federal de Medicina) e do padrão de Certificação de Prontuários (SBIS/CFM), o prontuário eletrônico do paciente (PEP) é um documento médico legal **imutável**. O uso de algoritmos de mesclagem automática de texto (como CRDTs - Yjs/Automerge) caractere por caractere em textos médicos introduz um risco clínico inaceitável. Por exemplo, se um médico digitar offline "Não administrar dipirona" e outro editar o mesmo bloco para "Administrar dipirona", uma mescla de texto automatizada pode corromper o texto clínico de forma perigosa e ilegível.
+* **Design**: 
+  * **Proibição de Mesclagem de Texto (No CRDT Merge)**: Sob nenhuma circunstância textos médicos conflitantes ou edições paralelas em prontuários e receitas médicas podem ser mesclados algoritmicamente.
+  * **Fluxo Append-Only (Adição Contínua)**: Não existe operação de `UPDATE` sobre a evolução clínica de prontuários salvos. Qualquer alteração ou correção pós-salvamento deve ser registrada exclusivamente como um **Adendo** ou **Retificação** em um novo bloco.
+  * **Resolução de Conflitos Offline**: Em caso de escritas concorrentes offline no mesmo prontuário, o sistema de sincronização deve anexar ambas as versões integralmente como registros independentes e separados, contendo carimbos de data/hora (timestamps), identificação de autoria (CRM e assinatura digital do médico correspondente) e metadados distintos. A interpretação clínica das evoluções conflitantes cabe estritamente à equipe médica.
+  * **Campos Mutáveis Permitidos**: Apenas campos de controle de assinatura digital (como status de assinatura e o payload de metadados da assinatura ICP-Brasil) podem sofrer alterações pontuais e transições de estado, nunca o corpo clínico textual.
 
