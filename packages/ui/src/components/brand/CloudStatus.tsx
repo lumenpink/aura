@@ -16,7 +16,7 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({
   className = '',
   tooltipAlign = 'top',
 }) => {
-  const [isClicked, setIsClicked] = useState(false);
+  const [isClicked, setIsClicked] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isClicked) return;
@@ -30,11 +30,14 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({
   const handleToggle = (e: React.MouseEvent) => {
     if (showText) return;
     e.stopPropagation();
-    setIsClicked((prev) => !prev);
+    setIsClicked((prev: boolean) => !prev);
   };
 
   // Config for each status state
-  const statusConfig = {
+  const statusConfig: Record<
+    CloudStatusType,
+    { color: string; dotColor: string; label: string; icon: React.ReactNode }
+  > = {
     online: {
       color: 'text-emerald-500 dark:text-emerald-400',
       dotColor: 'bg-emerald-500',

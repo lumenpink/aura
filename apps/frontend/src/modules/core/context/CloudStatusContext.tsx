@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { CloudStatusType } from '../../../components/brand/CloudStatus';
+import type { CloudStatusType } from '@aura/ui';
 
 interface CloudStatusContextType {
   status: CloudStatusType;

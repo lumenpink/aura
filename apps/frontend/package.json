@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@aura/shared": "workspace:*",
+    "@aura/ui": "workspace:*",
     "@hookform/resolvers": "^5.4.0",
     "hono": "^4.4.2",
     "lucide-react": "^1.17.0",

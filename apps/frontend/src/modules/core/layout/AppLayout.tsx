@@ -1,6 +1,5 @@
 import React from 'react';
-import Logo from '../../../components/brand/Logo';
-import CloudStatus from '../../../components/brand/CloudStatus';
+import { Logo, CloudStatus } from '@aura/ui';
 import { useCloudStatus } from '../context/CloudStatusContext';
 import { LayoutDashboard, Calendar, Briefcase, Settings, LogOut, Sun, Moon } from 'lucide-react';
 

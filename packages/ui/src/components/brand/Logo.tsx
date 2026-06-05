@@ -11,7 +11,7 @@ interface LogoProps {
   className?: string;
 }
 
-const SIZE_MAP = {
+const SIZE_MAP: Record<'small' | 'medium' | 'large', number> = {
   small: 32,
   medium: 48,
   large: 96,

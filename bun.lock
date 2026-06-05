@@ -34,6 +34,7 @@
       "name": "@aura/frontend",
       "dependencies": {
         "@aura/shared": "workspace:*",
+        "@aura/ui": "workspace:*",
         "@hookform/resolvers": "^5.4.0",
         "hono": "^4.4.2",
         "lucide-react": "^1.17.0",
@@ -86,6 +87,22 @@
         "zod": "^3.23.8",
       },
     },
+    "packages/ui": {
+      "name": "@aura/ui",
+      "version": "0.0.1",
+      "dependencies": {
+        "lucide-react": "^1.17.0",
+      },
+      "devDependencies": {
+        "@types/react": "^18.3.3",
+        "@types/react-dom": "^18.3.0",
+        "typescript": "^5.2.2",
+      },
+      "peerDependencies": {
+        "react": "^18.3.1 || ^19.0.0",
+        "react-dom": "^18.3.1 || ^19.0.0",
+      },
+    },
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
@@ -117,6 +134,8 @@
     "@aura/internal-docs": ["@aura/internal-docs@workspace:apps/internal-docs"],
 
     "@aura/shared": ["@aura/shared@workspace:packages/shared"],
+
+    "@aura/ui": ["@aura/ui@workspace:packages/ui"],
 
     "@aura/user-manual": ["@aura/user-manual@workspace:apps/user-manual"],
 

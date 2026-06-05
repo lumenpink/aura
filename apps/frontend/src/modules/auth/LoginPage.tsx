@@ -2,8 +2,7 @@ import React from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, type LoginCredentials } from '@aura/shared';
-import Logo from '../../components/brand/Logo';
-import CloudStatus from '../../components/brand/CloudStatus';
+import { Logo, CloudStatus } from '@aura/ui';
 import { useCloudStatus } from '../core/context/CloudStatusContext';
 import { Sun, Moon, AlertCircle } from 'lucide-react';
 

@@ -31,6 +31,9 @@
     "paths": {
       "@aura/shared": [
         "./packages/shared/src/index.ts"
+      ],
+      "@aura/ui": [
+        "./packages/ui/src/index.ts"
       ]
     }
   },
