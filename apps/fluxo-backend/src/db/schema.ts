@@ -23,3 +23,17 @@ export const appointments = sqliteTable('appointments', {
   status: text('status').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
+
+/**
+ * Patients Stub Table Schema (Aura Fluxo)
+ * Local cache of patient profiles for appointment scheduling without N+1 queries.
+ */
+export const patientsStub = sqliteTable('patients_stub', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  name: text('name').notNull(),
+  cpf: text('cpf').notNull(),
+  phone: text('phone').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+

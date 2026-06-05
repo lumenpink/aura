@@ -2,6 +2,7 @@
 export default new Map([
 ["src/content/docs/data-e-api.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fdata-e-api.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/diretrizes-desenvolvimento.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fdiretrizes-desenvolvimento.mdx&astroContentModuleFlag=true")],
+["src/content/docs/engenharia/arquitetura-caso.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fengenharia%2Farquitetura-caso.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/engenharia/arquitetura-pulso.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fengenharia%2Farquitetura-pulso.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/engenharia/arquitetura-traco.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fengenharia%2Farquitetura-traco.mdx&astroContentModuleFlag=true")],
 ["src/content/docs/engenharia/sse-reatividade.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fengenharia%2Fsse-reatividade.mdx&astroContentModuleFlag=true")],

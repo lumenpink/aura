@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
-import { appointments as appointmentsTable, syncFallbacks as syncFallbacksTable } from '../db/schema';
+import { appointments as appointmentsTable, syncFallbacks as syncFallbacksTable, patientsStub as patientsStubTable } from '../db/schema';
 import type { Bindings } from '../types';
 
 /**
@@ -106,17 +106,7 @@ export async function syncR2ToAnalytics(env: Bindings): Promise<void> {
       if (latestRef.type === 'R2') {
         const obj = await env.SYNC_BUCKET.get(latestRef.keyOrId);
         if (obj) {
-          const payload = await obj.json() as {
-            entityName: string;
-            action: string;
-            data: {
-              id: string;
-              patientName: string;
-              appointmentDate: string;
-              status: string;
-              createdAt: string;
-            };
-          };
+          const payload = await obj.json() as any;
 
           if (payload.entityName === 'Appointment') {
             const data = payload.data;
@@ -137,6 +127,37 @@ export async function syncR2ToAnalytics(env: Bindings): Promise<void> {
                   status: data.status,
                 },
               });
+            success = true;
+          } else if (payload.entityName === 'Patient') {
+            const data = payload.data;
+            const incomingUpdatedAt = new Date(data.updatedAt);
+
+            const [existingStub] = await dbMain
+              .select()
+              .from(patientsStubTable)
+              .where(eq(patientsStubTable.id, data.id));
+
+            if (!existingStub || incomingUpdatedAt.getTime() > existingStub.updatedAt.getTime()) {
+              await dbMain
+                .insert(patientsStubTable)
+                .values({
+                  id: data.id,
+                  tenantId: data.tenantId,
+                  name: data.name,
+                  cpf: data.cpf,
+                  phone: data.phone,
+                  updatedAt: incomingUpdatedAt,
+                })
+                .onConflictDoUpdate({
+                  target: patientsStubTable.id,
+                  set: {
+                    name: data.name,
+                    cpf: data.cpf,
+                    phone: data.phone,
+                    updatedAt: incomingUpdatedAt,
+                  }
+                });
+            }
             success = true;
           }
         }

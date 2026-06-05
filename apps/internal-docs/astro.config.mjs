@@ -41,6 +41,7 @@ export default defineConfig({
         { slug: 'engenharia/codigos-erro' },
         { slug: 'engenharia/geracao-pdf' },
         { slug: 'engenharia/arquitetura-pulso' },
+        { slug: 'engenharia/arquitetura-caso' },
         { slug: 'engenharia/arquitetura-traco' },
       ],
     }),

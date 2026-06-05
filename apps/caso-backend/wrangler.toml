@@ -1,0 +1,23 @@
+name = "aura-caso-backend"
+main = "src/index.ts"
+compatibility_date = "2026-06-02"
+
+[[d1_databases]]
+binding = "D1_MAIN"
+database_name = "aura-caso-db-main"
+database_id = "local-aura-caso-db-main-id"
+migrations_dir = "migrations"
+
+[[d1_databases]]
+binding = "D1_ANALYTICS"
+database_name = "aura-caso-db-analytics"
+database_id = "local-aura-caso-db-analytics-id"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "REVOCATION_KV"
+id = "local-caso-revocation-kv-id"
+
+[[r2_buckets]]
+binding = "SYNC_BUCKET"
+bucket_name = "aura-caso-sync-bucket"

@@ -37,6 +37,23 @@ class MockD1Database {
         }
       }
 
+      // Handle patients_stub inserts/upserts
+      if (cleanQuery.includes("insert into patients_stub")) {
+        const id = this.boundArgs[0];
+        const tenantId = this.boundArgs[1];
+        const name = this.boundArgs[2];
+        const cpf = this.boundArgs[3];
+        const phone = this.boundArgs[4];
+        const updatedAt = this.boundArgs[5];
+
+        const existingIdx = this.rows.findIndex((r) => r.id === id && r.isPatientStub);
+        if (existingIdx !== -1) {
+          this.rows[existingIdx] = { id, tenantId, name, cpf, phone, updatedAt, isPatientStub: true };
+        } else {
+          this.rows.push({ id, tenantId, name, cpf, phone, updatedAt, isPatientStub: true });
+        }
+      }
+
       // Handle sync_fallbacks inserts
       if (cleanQuery.includes("insert into sync_fallbacks")) {
         const id = this.boundArgs[0];
@@ -74,6 +91,15 @@ class MockD1Database {
               const results = this.rows.filter((r) => r.isFallback === true);
               return { results };
             }
+            if (cleanQuery.includes("patients_stub")) {
+              if (cleanQuery.includes("where id =") || cleanQuery.includes("where patients_stub.id =")) {
+                const idFilter = boundArgs[0];
+                const results = this.rows.filter((r) => r.id === idFilter && r.isPatientStub);
+                return { results };
+              }
+              const results = this.rows.filter((r) => r.isPatientStub);
+              return { results };
+            }
             if (cleanQuery.includes("appointments")) {
               // If there's a filter by ID
               if (cleanQuery.includes("where id =") || cleanQuery.includes("where appointments.id =")) {
@@ -81,7 +107,7 @@ class MockD1Database {
                 const results = this.rows.filter((r) => r.id === idFilter && !r.isFallback);
                 return { results };
               }
-              const results = this.rows.filter((r) => !r.isFallback);
+              const results = this.rows.filter((r) => !r.isFallback && !r.isPatientStub);
               return { results };
             }
           }
@@ -92,6 +118,8 @@ class MockD1Database {
           return results.map((row: any) => {
             if (row.isFallback) {
               return [row.id, row.entityName, row.recordId, row.error, row.createdAt];
+            } else if (row.isPatientStub) {
+              return [row.id, row.tenantId, row.name, row.cpf, row.phone, row.updatedAt];
             } else {
               return [row.id, row.patientName, row.appointmentDate, row.status, row.createdAt];
             }
@@ -496,5 +524,70 @@ describe("CQRS Eventual Consistency via R2 & Scheduled Cron", () => {
     expect(r2Bucket.store.size).toBe(0);
     const fallbackExists = dbMain.rows.some(r => r.id === "fallback-t2" && r.isFallback === true);
     expect(fallbackExists).toBe(false);
+  });
+
+  it("should synchronize Patient events from R2 and execute Last-Write-Wins conditional upsert on D1_MAIN patients_stub", async () => {
+    // 1. Seed existing older patient profile in Fluxo patients_stub
+    const oldUpdate = new Date("2026-06-04T12:00:00Z");
+    dbMain.rows.push({
+      id: "pat-123",
+      tenantId: "silo-alpha",
+      name: "Old Name",
+      cpf: "123.456.789-00",
+      phone: "11999998888",
+      updatedAt: Math.floor(oldUpdate.getTime() / 1000),
+      isPatientStub: true,
+    });
+
+    // 2. Put newer patient update event in R2
+    const newUpdate = new Date("2026-06-04T12:30:00Z");
+    const eventPayload = {
+      entityName: "Patient",
+      action: "upsert",
+      data: {
+        id: "pat-123",
+        tenantId: "silo-alpha",
+        name: "New Name",
+        cpf: "123.456.789-00",
+        phone: "11988887777",
+        updatedAt: newUpdate.toISOString(),
+      },
+      timestamp: newUpdate.toISOString(),
+    };
+    await r2Bucket.put(`queue/patient_pat-123_${newUpdate.getTime()}.json`, JSON.stringify(eventPayload));
+
+    // 3. Trigger scheduled sync
+    await syncR2ToAnalytics(env);
+
+    // 4. Verify local patients_stub was updated with the new name (Last-Write-Wins)
+    const stubRecord = dbMain.rows.find((r) => r.id === "pat-123" && r.isPatientStub);
+    expect(stubRecord).toBeDefined();
+    expect(stubRecord.name).toBe("New Name");
+    expect(stubRecord.phone).toBe("11988887777");
+    expect(new Date((stubRecord.updatedAt as number) * 1000)).toEqual(newUpdate);
+
+    // 5. Seed an even newer update event, and then an obsolete/delayed event
+    const obsoleteUpdate = new Date("2026-06-04T12:15:00Z"); // Chronologically before the current state (12:30)
+    const obsoletePayload = {
+      entityName: "Patient",
+      action: "upsert",
+      data: {
+        id: "pat-123",
+        tenantId: "silo-alpha",
+        name: "Obsolete Delayed Update",
+        cpf: "123.456.789-00",
+        phone: "11999999999",
+        updatedAt: obsoleteUpdate.toISOString(),
+      },
+      timestamp: obsoleteUpdate.toISOString(),
+    };
+    await r2Bucket.put(`queue/patient_pat-123_${obsoleteUpdate.getTime()}.json`, JSON.stringify(obsoletePayload));
+
+    // Run sync again
+    await syncR2ToAnalytics(env);
+
+    // Verify D1_MAIN patients_stub did NOT regress (LWW block worked)
+    const recheckStub = dbMain.rows.find((r) => r.id === "pat-123" && r.isPatientStub);
+    expect(recheckStub.name).toBe("New Name"); // Kept Name from T=12:30 update
   });
 });

@@ -1,0 +1,104 @@
+---
+title: Arquitetura Aura Caso
+description: Diretrizes de arquitetura, contratos de API, modelagem Drizzle ORM e integração do prontuário eletrônico no Aura Caso.
+---
+
+O **Aura Caso** é o microsserviço dedicado do ecossistema Aura encarregado da gestão clínica, prontuário eletrônico do paciente (PEP), anamnese, lista de alergias, diagnósticos e anexos de exames.
+
+Aura Caso é projetado como um componente independente. Ele pode ser acessado diretamente por médicos ou integrado dinamicamente no painel do **Aura Fluxo** via micro-frontend.
+
+---
+
+## 1. Topologia e Portas
+
+* **Frontend (Standalone / MFE Dev)**: `caso.localhost:12601`
+* **Backend API**: `caso-api.localhost:12602`
+* **Banco de Dados**: Silo SQLite exclusivo persistido localmente sob a pasta `apps/caso-backend` no D1 (`D1_MAIN` e `D1_ANALYTICS`).
+
+---
+
+## 2. Modelagem de Dados (Drizzle ORM)
+
+As definições do banco de dados do Aura Caso gerenciam as informações demográficas do paciente e todos os seus registros médicos e históricos clínicos.
+
+### Tabela `patients`
+Cadastro centralizado de dados demográficos de pacientes do prontuário eletrônico.
+
+```typescript
+export const patients = sqliteTable('patients', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  name: text('name').notNull(),
+  cpf: text('cpf').notNull(),
+  phone: text('phone').notNull(),
+  address: text('address'), // String JSON (CEP, UF, IBGE, etc.)
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+```
+
+> [!TIP]
+> **Endereço em Coluna Única (JSON)**:
+> Para otimização de performance e manutenção do esquema de banco de dados relacional simples, o endereço é serializado em uma única coluna `address` (texto JSON). A validação estruturada dos campos do endereço (CEP, UF, etc.) é garantida exclusivamente na camada de aplicação via Zod antes da persistência, garantindo conformidade e interoperabilidade (HL7/TISS) sem complexidade nas tabelas.
+
+---
+
+## 3. Segurança e Validação de Tokens (JWKS)
+
+Como o Aura Caso não possui uma tela de login própria, ele atua de forma **stateless** utilizando os tokens de autenticação emitidos originalmente pelo **Aura Fluxo**.
+
+- **Validação com Fluxo JWKS**:
+  - Toda chamada HTTP para `caso-api.localhost:12602/api/*` exige o cabeçalho `Authorization: Bearer <JWT>`.
+  - O backend do Caso obtém o Key ID (`kid`) presente no cabeçalho do token.
+  - Ele consulta o endpoint de JWKS do Aura Fluxo (`http://fluxo-api.localhost:12202/auth/jwks`) para resolver a chave pública correspondente.
+  - Para evitar latência e chamadas de rede recorrentes, o Caso utiliza a **Cloudflare Cache API nativa (`caches.default`)** ou o `REVOCATION_KV` local para persistir o JWKS recebido (respeitando o `Cache-Control` de 24 horas exposto pelo Fluxo).
+
+---
+
+## 4. Integração do Frontend (Micro-frontend / Web Component)
+
+O Aura Caso Frontend disponibiliza um script JavaScript compilado que registra um Web Component nativo:
+
+```html
+<script type="module" src="http://caso.localhost:12601/assets/caso-element.js"></script>
+```
+
+O container hospedeiro (Aura Fluxo) instancia o prontuário declarativamente:
+
+```html
+<aura-caso-app
+  tenant-id="silo-clinica-a"
+  patient-cpf="12345678909"
+  access-token="jwt-token"
+></aura-caso-app>
+```
+
+O isolamento de estilos via Shadow DOM assegura que a formatação e visualização das evoluções clínicas permaneçam consistentes em qualquer tela hospedeira.
+
+---
+
+## 5. Sincronização Event-Driven (Consistência Eventual)
+
+Para que a agenda operacional do Aura Fluxo consiga exibir os nomes e telefones de contato dos pacientes nas consultas sem realizar requisições REST adicionais do tipo N+1 para o microsserviço de prontuário, o ecossistema adota consistência eventual:
+
+1. **Escrita no Caso**: Toda inserção ou alteração na tabela de `patients` realizada na API do Aura Caso publica um payload JSON de evento no bucket R2 compartilhado (`SYNC_BUCKET/queue/`):
+   ```json
+   {
+     "entityName": "Patient",
+     "action": "upsert",
+     "data": {
+       "id": "uuid-do-paciente",
+       "tenantId": "clinica-id",
+       "name": "Nome do Paciente",
+       "cpf": "12345678909",
+       "phone": "11988887777",
+       "updatedAt": "2026-06-05T09:40:00.000Z"
+     },
+     "timestamp": "2026-06-05T09:40:00.000Z"
+   }
+   ```
+   *Nome do arquivo*: `queue/patient_[id]_[timestamp].json`.
+2. **Ingestão no Fluxo**: O Scheduled Worker (Cron) do Aura Fluxo varre a fila do R2 a cada minuto:
+   - Identifica os eventos do tipo `Patient`.
+   - Executa a validação **Last-Write-Wins (LWW)** comparando o campo `updated_at` (do evento vs o atual na tabela local).
+   - Realiza o Upsert no banco operacional do Fluxo na tabela de leitura **`patients_stub`**.

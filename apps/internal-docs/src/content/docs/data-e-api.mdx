@@ -15,6 +15,7 @@ Para garantir segurança estrita, conformidade com a LGPD e mitigar contenções
 - **CQRS Lite (Segregação de Leitura/Escrita)**:
   - **`D1_MAIN` (OLTP - Operacional)**: Focado em transações de alta frequência (login, agendamentos, prontuários).
   - **`D1_ANALYTICS` (OLAP - Relatórios)**: Focado em consultas pesadas, agregações e relatórios.
+- **Sincronização de Cadastro de Pacientes (Caso -> Fluxo)**: Para evitar consultas cross-service do tipo N+1 ao carregar a agenda de atendimentos, o Aura Fluxo possui a tabela de leitura local `patients_stub`. Toda inserção ou alteração na tabela de `patients` efetuada no Aura Caso gera um evento de mutação no `SYNC_BUCKET/queue/`. O Cron do Aura Fluxo lê esses payloads e executa um Upsert Condicional (LWW) para espelhar a informação demográfica básica localmente de forma eventual.
 - Um Scheduled Worker (Cron) roda a cada 1 minuto, adquire um lock distribuído temporário no KV (`lock:sync_analytics` com TTL de 5min contra travamentos) e executa a reconciliação eventual unificada e deduplicada:
   1. **Unificação de Fontes com Controle de Lote**: Busca concorrentemente os registros da tabela `sync_fallbacks` (banco de dados operacional `D1_MAIN`) e os arquivos JSON de mutação pendentes na fila do R2 (`SYNC_BUCKET/queue/`). Para evitar estouro de memória (Out-of-Memory / OOM), o Cron limita o processamento a um lote máximo de 500 a 1000 referências por execução, utilizando paginação via cursor (`continuationToken`) na API `LIST` do R2 e a cláusula `LIMIT` na consulta SQL ao `D1_MAIN`.
   2. **Mapeamento e Ordenação Cronológica**: Consolida todas as referências em uma lista única de referências de eventos (`EventRef`), mapeando o timestamp de criação, ID do registro e nome da entidade, e ordena-os de forma estritamente cronológica.
@@ -78,6 +79,18 @@ Armazena a agenda operacional de consultas da clínica.
 | `status` | `text()` | `TEXT` | Não Nulo (valores comuns: `Pendente`, `Confirmado`, `Cancelado`) |
 | `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de inserção do registro) |
 
+### Tabela: `patients_stub` (Aura Fluxo)
+Tabela de leitura contendo o cache local de dados demográficos de pacientes para carregamento da agenda sem a necessidade de consultas N+1 inter-serviços.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `name` | `text()` | `TEXT` | Não Nulo (nome do paciente) |
+| `cpf` | `text()` | `TEXT` | Não Nulo (CPF do paciente) |
+| `phone` | `text()` | `TEXT` | Não Nulo (telefone do paciente) |
+| `updated_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data da última atualização) |
+
 ### Tabela: `sync_fallbacks`
 Fila de contingência para registros cuja replicação assíncrona falhou.
 
@@ -117,19 +130,83 @@ Logs históricos de status de validade e controle das receitas.
 | `current_hash` | `text()` | `TEXT` | Não Nulo (hash SHA-256 da linha atual) |
 | `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data do evento) |
 
-### Tabela: `clinical_evolutions` (Aura Fluxo)
+### Tabela: `patients` (Aura Caso)
+Cadastro centralizado de dados demográficos de pacientes do prontuário eletrônico.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `name` | `text()` | `TEXT` | Não Nulo (nome completo) |
+| `cpf` | `text()` | `TEXT` | Não Nulo (CPF exclusivo) |
+| `phone` | `text()` | `TEXT` | Não Nulo (telefone de contato) |
+| `address` | `text()` | `TEXT` | Nulo/Não Nulo (String JSON contendo CEP, UF, IBGE, rua, etc. estruturado via Zod no app) |
+| `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de inserção) |
+| `updated_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de atualização) |
+
+### Tabela: `clinical_evolutions` (Aura Caso)
 Evoluções médicas e anotações clínicas do paciente no prontuário eletrônico.
 
 | Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
 | :--- | :--- | :--- | :--- |
 | `id` | `text()` | `TEXT` | Chave Primária (UUID) |
 | `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
-| `patient_id` | `text()` | `TEXT` | Não Nulo (chave estrangeira do paciente) |
+| `patient_id` | `text()` | `TEXT` | Não Nulo (chave estrangeira de `patients`) |
 | `doctor_cpf` | `text()` | `TEXT` | Não Nulo (CPF do médico autor) |
 | `notes` | `text()` | `TEXT` | Não Nulo (texto clínico da evolução) |
 | `previous_hash` | `text()` | `TEXT` | Não Nulo (hash da linha anterior de evolução deste paciente) |
 | `current_hash` | `text()` | `TEXT` | Não Nulo (hash SHA-256 da linha atual) |
 | `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de inserção da evolução) |
+
+### Tabela: `anamneses` (Aura Caso)
+Formulários de admissão e prontuário estruturado.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `patient_id` | `text()` | `TEXT` | Não Nulo (chave estrangeira de `patients`) |
+| `doctor_cpf` | `text()` | `TEXT` | Não Nulo (CPF do médico) |
+| `content` | `text()` | `TEXT` | Não Nulo (String JSON contendo chaves e valores estruturados da anamnese) |
+| `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de criação) |
+
+### Tabela: `allergies` (Aura Caso)
+Alergias e intolerâncias registradas do paciente.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `patient_id` | `text()` | `TEXT` | Não Nulo (chave estrangeira de `patients`) |
+| `substance` | `text()` | `TEXT` | Não Nulo (Nome da substância/medicamento causador) |
+| `severity` | `text()` | `TEXT` | Não Nulo (valores comuns: `Leve`, `Moderada`, `Grave`) |
+| `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de registro) |
+
+### Tabela: `patient_diagnoses` (Aura Caso)
+Lista de problemas e diagnósticos ativos do paciente.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `patient_id` | `text()` | `TEXT` | Não Nulo (chave estrangeira de `patients`) |
+| `cid_code` | `text()` | `TEXT` | Não Nulo (código regulatório CID-10 ou CID-11) |
+| `description` | `text()` | `TEXT` | Não Nulo (descrição clínica do diagnóstico) |
+| `status` | `text()` | `TEXT` | Não Nulo (valores comuns: `Ativo`, `Inativo`, `Resolvido`) |
+| `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data de registro) |
+
+### Tabela: `patient_attachments` (Aura Caso)
+Laudos, exames externos e arquivos anexados ao prontuário.
+
+| Campo | Tipo Drizzle | Tipo SQLite | Restrições / Detalhes |
+| :--- | :--- | :--- | :--- |
+| `id` | `text()` | `TEXT` | Chave Primária (UUID) |
+| `tenant_id` | `text()` | `TEXT` | Não Nulo (identificador do silo/clínica) |
+| `patient_id` | `text()` | `TEXT` | Não Nulo (chave estrangeira de `patients`) |
+| `file_name` | `text()` | `TEXT` | Não Nulo (nome original do arquivo) |
+| `r2_key` | `text()` | `TEXT` | Não Nulo (chave de referência do bucket R2 de armazenamento) |
+| `uploaded_by` | `text()` | `TEXT` | Não Nulo (CPF do médico/profissional que realizou o upload) |
+| `created_at` | `integer({ mode: 'timestamp' })` | `INTEGER` | Não Nulo (data do upload) |
 
 ---
 
