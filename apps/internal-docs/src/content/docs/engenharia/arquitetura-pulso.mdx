@@ -406,7 +406,171 @@ Caso o paciente não pertença ao `tenant_id` informado no JWT (ou o `tenant_id`
 
 ---
 
-## 6. Rotas Principais da API (`/api/prescriptions`)
+## 6. Arquitetura de Integração do Frontend (Micro-frontend / Micro-framework)
+
+O **Aura Pulso Frontend** foi arquitetado de forma a garantir autonomia total de ciclo de vida e deploy. Ele opera em dois modos distintos de execução:
+1. **Modo Standalone**: Acessado diretamente no endereço `http://pulso.localhost:12401` como um Single Page Application (SPA) React tradicional.
+2. **Modo Integrado (Micro-framework)**: Embutido de forma transparente no dashboard do **Aura Fluxo** ou em outros sistemas autorizados, sem a necessidade de importar componentes compartilhados ou recompilar a aplicação hospedeira (*Shell*).
+
+Para evitar que modificações no Aura Pulso exijam atualizações e builds simultâneos em todas as instâncias e clínicas rodando o Aura Fluxo, a integração é realizada utilizando a especificação padrão de **Web Components (Custom Elements)**.
+
+```mermaid
+sequenceDiagram
+    participant Fluxo as Aura Fluxo (Shell)
+    participant CDN as CDN / Edge Cache (Pulso assets)
+    participant Pulso as Web Component (aura-pulso-app)
+    participant API as Aura Pulso (Backend API)
+
+    Fluxo->>CDN: Carrega script dinâmico (pulso-element.js)
+    CDN-->>Fluxo: Retorna bundle javascript do Custom Element
+    Note over Fluxo: Registra o elemento no navegador
+    Fluxo->>Fluxo: Insere <aura-pulso-app tenant-id="..." token="...">
+    Fluxo->>Pulso: Instancia o elemento (Shadow DOM Mount)
+    Pulso->>Pulso: Inicializa aplicação React interna
+    Pulso->>API: Chamadas HTTP (/api/prescriptions)
+    API-->>Pulso: Dados da receita
+    Note over Pulso: Médico emite e assina receita
+    Pulso->>Fluxo: Dispara CustomEvent("prescription-signed", { id })
+```
+
+### 1. Definição do Custom Element no Aura Pulso
+
+No projeto `apps/pulso-frontend`, a aplicação expõe um entrypoint que envelopa a aplicação React em uma classe padrão do navegador que herda de `HTMLElement`, registrando-a como um Custom Element no Shadow DOM (para isolamento completo de estilos CSS):
+
+```typescript
+// Exemplo de entrypoint de montagem do Custom Element (Web Component) no Pulso
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+class AuraPulsoAppElement extends HTMLElement {
+  private root: ReactDOM.Root | null = null;
+
+  // Escuta alterações nos atributos expostos pelo Shell
+  static get observedAttributes() {
+    return ['tenant-id', 'patient-cpf', 'access-token'];
+  }
+
+  connectedCallback() {
+    // 1. Cria a raiz do Shadow DOM para isolar CSS
+    const shadow = this.attachShadow({ mode: 'open' });
+    
+    // 2. Cria o container de montagem e anexa o CSS compilado
+    const container = document.createElement('div');
+    container.id = 'pulso-root';
+    
+    const styleLink = document.createElement('link');
+    styleLink.rel = 'stylesheet';
+    styleLink.href = 'http://pulso.localhost:12401/assets/style.css'; // Carrega estilo isolado
+    
+    shadow.appendChild(styleLink);
+    shadow.appendChild(container);
+
+    // 3. Monta a aplicação React
+    this.root = ReactDOM.createRoot(container);
+    this.renderReact();
+  }
+
+  attributeChangedCallback(name: string, oldValue: string, newValue: string) {
+    if (oldValue !== newValue && this.root) {
+      this.renderReact(); // Re-renderiza a árvore React com os novos dados de entrada
+    }
+  }
+
+  disconnectedCallback() {
+    // Desmontagem limpa do React para evitar vazamento de memória
+    if (this.root) {
+      this.root.unmount();
+    }
+  }
+
+  private renderReact() {
+    const tenantId = this.getAttribute('tenant-id') || '';
+    const patientCpf = this.getAttribute('patient-cpf') || '';
+    const accessToken = this.getAttribute('access-token') || '';
+
+    this.root?.render(
+      <React.StrictMode>
+        <App 
+          tenantId={tenantId} 
+          patientCpf={patientCpf} 
+          accessToken={accessToken}
+          onSuccess={(recipeId) => {
+            // Emite eventos de sucesso para o Shell (Aura Fluxo)
+            this.dispatchEvent(new CustomEvent('prescription-signed', {
+              detail: { recipeId },
+              bubbles: true,
+              composed: true
+            }));
+          }}
+        />
+      </React.StrictMode>
+    );
+  }
+}
+
+// Registra o componente no catálogo global do navegador
+if (!customElements.get('aura-pulso-app')) {
+  customElements.define('aura-pulso-app', AuraPulsoAppElement);
+}
+```
+
+### 2. Integração no Aura Fluxo (Shell)
+
+Para utilizar o componente do Pulso no Fluxo de forma transparente e em tempo de execução (*runtime*), o Fluxo precisa apenas carregar o script do Web Component e injetar a tag HTML personalizada em sua tela:
+
+#### Carregamento Dinâmico (JSX / React no Fluxo)
+```typescript
+import React, { useEffect } from 'react';
+
+export function EmissaoReceitaContainer({ patientCpf, tenantId, token }) {
+  useEffect(() => {
+    // Carrega o bundle de distribuição do Pulso a partir da CDN/Edge
+    const scriptId = 'aura-pulso-script';
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.type = 'module';
+      script.src = 'http://pulso.localhost:12401/assets/pulso-element.js';
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  useEffect(() => {
+    const element = document.querySelector('aura-pulso-app');
+    
+    // Escuta eventos customizados disparados de dentro do Shadow DOM do Pulso
+    const handleSuccess = (event: any) => {
+      console.log(`Receita emitida com sucesso! ID: ${event.detail.recipeId}`);
+      // Executa lógica no Fluxo, como recarregar prontuário ou logs
+    };
+
+    element?.addEventListener('prescription-signed', handleSuccess);
+    return () => {
+      element?.removeEventListener('prescription-signed', handleSuccess);
+    };
+  }, []);
+
+  return (
+    <div className="pulso-integration-wrapper">
+      <aura-pulso-app
+        tenant-id={tenantId}
+        patient-cpf={patientCpf}
+        access-token={token}
+      />
+    </div>
+  );
+}
+```
+
+### 3. Vantagens do Modelo de Micro-frontend por Web Components
+* **Zero build-time coupling**: O Aura Fluxo e o Aura Pulso possuem pipelines de build e deploys separados. Uma alteração visual ou de lógica no Pulso é disponibilizada instantaneamente na próxima atualização de script na nuvem sem requerer alteração de código ou build no Fluxo.
+* **Isolamento de Estilo (Shadow DOM)**: Garante que os estilos CSS globais do Aura Fluxo não vazem para dentro do formulário do Pulso e vice-versa, blindando a identidade visual de ambos os produtos.
+* **Compatibilidade de Framework**: O elemento `<aura-pulso-app>` é uma tag HTML nativa compatível com qualquer framework JS (Angular, Vue, Svelte, React) ou até HTML puro.
+
+---
+
+## 7. Rotas Principais da API (`/api/prescriptions`)
 
 Todos os endpoints operacionais estão aninhados sob o sub-roteador `/api` do Aura Pulso.
 
