@@ -23,7 +23,7 @@ describe("loginSchema", () => {
         const result = loginSchema.safeParse(credentials);
         expect(result.success).toBe(false);
         if (!result.success) {
-            const passwordError = result.error.errors.find(e => e.path.includes("password"));
+            const passwordError = result.error.issues.find(e => e.path.includes("password"));
             expect(passwordError?.message).toBe("Senha muito curta");
         }
     });
@@ -36,7 +36,7 @@ describe("loginSchema", () => {
         const result = loginSchema.safeParse(credentials);
         expect(result.success).toBe(false);
         if (!result.success) {
-            const usernameError = result.error.errors.find(e => e.path.includes("username"));
+            const usernameError = result.error.issues.find(e => e.path.includes("username"));
             expect(usernameError?.message).toBe("CPF inválido");
         }
     });

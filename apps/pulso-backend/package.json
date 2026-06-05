@@ -9,10 +9,10 @@
   "dependencies": {
     "hono": "^4.12.23",
     "@aura/shared": "workspace:*",
-    "drizzle-orm": "^0.30.10"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260602.1",
-    "wrangler": "^4.96.0"
+    "@cloudflare/workers-types": "^4.20260605.1",
+    "wrangler": "^4.98.0"
   }
 }
