@@ -83,3 +83,45 @@ Quando o primeiro erro `401 Unauthorized` com a causa `Token Expired` é captura
    - Executa-se todas as requisições represadas na `refreshQueue` com o novo token de acesso no cabeçalho.
    - Desliga-se o sinalizador `isRefreshing`.
 5. Se a chamada de refresh falhar (indicando que o Refresh Token de 7 dias também expirou ou foi revogado por reuso), a fila é rejeitada e o usuário é redirecionado para a tela de login (`/auth/login`).
+
+---
+
+## 4. Concorrência Multi-Abas e Sincronização (Web Locks & BroadcastChannel)
+
+A rotação obrigatória de Refresh Tokens (RTR) introduz uma vulnerabilidade operacional se o usuário abrir a aplicação em múltiplas abas:
+- Se o Access Token expirar em background, ações simultâneas em abas diferentes podem acionar o processo de Silent Refresh ao mesmo tempo.
+- Ambas as abas enviariam o mesmo Refresh Token para `/auth/refresh`. A primeira requisição que o servidor processar rotacionará o token; a segunda enviará um token já invalidado (reusado), acionando o gatilho de segurança do backend e destruindo a sessão inteira do usuário.
+
+Para contornar essa concorrência inter-abas sem abrir mão da segurança dos tokens em memória, a Aura adota uma mecânica de sincronização distribuída no frontend combinando a **Web Locks API** e a **BroadcastChannel API**:
+
+### Funcionamento do Fluxo Sincronizado
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Aba1 as Aba 1 (Ativa/Obtém Lock)
+    participant Aba2 as Aba 2 (Passiva/Espera Lock)
+    participant AuthAPI as Auth API (/auth/refresh)
+
+    Note over Aba1, Aba2: Ambas as abas detectam necessidade de Refresh (ex: 401)
+    
+    Aba1->>Aba1: navigator.locks.request('auth_refresh_lock', { ifAvailable: true })
+    Note over Aba1: Lock concedido (Aba Ativa)
+    
+    Aba2->>Aba2: navigator.locks.request('auth_refresh_lock', { ifAvailable: true })
+    Note over Aba2: Lock indisponível (Aba Passiva).<br/>Aba 2 escuta BroadcastChannel e aguarda.
+
+    Aba1->>AuthAPI: POST /auth/refresh (envia cookie)
+    AuthAPI-->>Aba1: 200 OK { accessToken } + Novo Cookie (HttpOnly)
+    Aba1->>Aba1: Salva accessToken em memória local
+    
+    Aba1->>Aba2: Envia mensagem via BroadcastChannel: REFRESH_SUCCESS { accessToken }
+    Aba1->>Aba1: Libera 'auth_refresh_lock'
+    
+    Aba2->>Aba2: Recebe REFRESH_SUCCESS e extrai accessToken para memória local
+    Note over Aba2: Resolve fila pendente e reenvia requisições originais
+```
+
+### Detalhes de Resiliência:
+1. **Safety Timeout**: As abas passivas que aguardam a transmissão do token via `BroadcastChannel` possuem um timeout de segurança (8 segundos). Caso a aba ativa seja fechada ou trave antes de concluir a requisição de refresh, as abas passivas expiram a espera, tentam adquirir o lock e efetuam o refresh de forma autônoma.
+2. **Fallback Progressivo**: Em navegadores antigos sem suporte para a Web Locks API, a trava é ignorada e a requisição é enviada diretamente, mantendo a retrocompatibilidade básica de navegação de aba única.
