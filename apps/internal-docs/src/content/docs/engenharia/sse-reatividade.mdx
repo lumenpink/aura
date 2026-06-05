@@ -104,10 +104,21 @@ sequenceDiagram
 
 Para assegurar uma reatividade robusta e segura, o canal de comunicação opera sob as especificações nativas das Web APIs, garantindo portabilidade para qualquer nuvem.
 
-### Estratégia de Reconexão Nativa
-O navegador gerencia a reconexão automática do `EventSource`. Se a conexão de rede oscilar ou for derrubada:
-1. O cliente entra em estado de reconexão automática após um atraso padrão de ~3 segundos (configurável pelo servidor via parâmetro `retry:` no stream).
-2. O servidor pode emitir o parâmetro `id:` em cada mensagem. Na reconexão, o navegador enviará automaticamente o header `Last-Event-ID`, permitindo ao backend retransmitir eventos que foram perdidos durante o intervalo de desconexão.
+### Falha na Reconexão Nativa e Estratégia Ativa
+
+Embora a especificação da W3C preveja que o navegador gerencie a reconexão automática do `EventSource` nativo, essa abordagem **colapsa** ao utilizar a segurança baseada em **Short-lived Tickets**:
+1. **URL Imutável**: O `EventSource` nativo do navegador tenta reconectar automaticamente reutilizando exatamente a mesma URL com a qual foi instanciado (contendo o parâmetro `ticket=...`).
+2. **Expiração do Ticket**: Como o ticket expira em 30 segundos, qualquer reconexão automática que ocorra após este período de segurança será liminarmente rejeitada pelo servidor com status de erro (401/403). A API do `EventSource` não fornece hooks nativos para atualizar a URL ou injetar cabeçalhos dinamicamente durante tentativas de reconexão nativas.
+
+Para resolver este limite físico do navegador e garantir alta resiliência, a Aura implementa uma **Estratégia de Reconexão Ativa no Cliente**:
+1. **Interceptação de Erro**: O frontend escuta o evento `onerror` do `EventSource` atual.
+2. **Descarte Imediato**: Fecha-se a instância ativa de forma explícita via `.close()`.
+3. **Resolução de Conectividade (Online/LAN/Offline)**: O cliente tenta obter um novo ticket temporário de conexão via chamada HTTP autenticada:
+   - **Modo Online**: Tenta contato com os nós de borda da nuvem da Aura.
+   - **Modo LAN (Rede Local)**: Tenta obter do servidor de gateway local ou VPN da clínica.
+   - **Modo Offline**: Caso todos os servidores estejam indisponíveis (sem internet ou rede local fora), a reconexão entra em loop de retentativa em background.
+4. **Intervalo Resiliente (Backoff Exponencial)**: Para mitigar gargalos e sobrecargas no servidor, as retentativas de requisição de ticket operam sob **Backoff Exponencial**, iniciando em 2 segundos e duplicando sucessivamente até um teto aceitável de 30 segundos (ex: 2s, 4s, 8s, 16s, 30s). Assim que um ticket é obtido com sucesso, o intervalo de backoff é reiniciado para o valor base.
+5. **Preservação de Estado (`lastEventId`)**: Ao receber mensagens bem-sucedidas no stream, o frontend atualiza dinamicamente a referência do último ID de evento processado (`lastEventId`). Ao criar a nova instância do `EventSource` com o novo ticket, anexa-se o parâmetro `lastEventId` na URL (ex: `&lastEventId=${lastEventId}`). O backend está configurado para ler este parâmetro da query (caso o cabeçalho HTTP `Last-Event-ID` não esteja presente) e retransmitir eventos que ocorreram durante o período de desconexão.
 
 ### Segurança e Validação de Tokens
 Diferente de requisições Fetch, a API nativa do `EventSource` do navegador **não permite a definição de cabeçalhos HTTP customizados** (como `Authorization: Bearer <Token>`). Contornamos essa restrição utilizando as seguintes abordagens compatíveis com o padrão:
@@ -138,34 +149,110 @@ interface InvalidationPayload {
   date?: string;
 }
 
-export function setupRealtimeSync(queryClient: QueryClient, ticket: string) {
-  const url = `/api/stream?ticket=${encodeURIComponent(ticket)}`;
-  const eventSource = new EventSource(url);
+export function setupRealtimeSync(
+  queryClient: QueryClient,
+  fetchNewTicket: () => Promise<string>,
+  onStatusChange?: (status: 'online' | 'lan' | 'offline') => void
+) {
+  let eventSource: EventSource | null = null;
+  let lastEventId: string | null = null;
+  let isClosed = false;
+  let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  
+  // Exponential backoff configuration
+  const BASE_DELAY = 2000; // 2 seconds
+  const MAX_DELAY = 30000; // 30 seconds
+  let currentDelay = BASE_DELAY;
 
-  eventSource.addEventListener('INVALIDATE', (event) => {
+  async function connect() {
+    if (isClosed) return;
+
     try {
-      const payload: InvalidationPayload = JSON.parse(event.data);
+      // 1. Fetch a new short-lived ticket (resolves through Online or LAN endpoints)
+      const ticket = await fetchNewTicket();
       
-      // Constrói a chave de consulta com base no payload
-      const queryKey = [payload.entity];
-      if (payload.date) queryKey.push(payload.date);
-      if (payload.id) queryKey.push(payload.id);
+      // If we successfully fetch the ticket, we assume we are connected (Online/LAN)
+      currentDelay = BASE_DELAY; // Reset backoff delay
 
-      // Invalida a query de forma silenciosa para disparar o refetch
-      queryClient.invalidateQueries({ queryKey });
-      console.log(`[SSE] Cache invalidado para a chave:`, queryKey);
-    } catch (err) {
-      console.error('[SSE] Falha ao parsear payload de invalidação:', err);
+      // 2. Build connection URL incorporating lastEventId for event replay safety
+      let url = `/api/stream?ticket=${encodeURIComponent(ticket)}`;
+      if (lastEventId) {
+        url += `&lastEventId=${encodeURIComponent(lastEventId)}`;
+      }
+
+      // 3. Close any dangling connection and initialize new EventSource
+      if (eventSource) {
+        eventSource.close();
+      }
+      eventSource = new EventSource(url);
+
+      // 4. Handle events and track lastEventId
+      eventSource.addEventListener('INVALIDATE', (event) => {
+        if (event.lastEventId) {
+          lastEventId = event.lastEventId;
+        }
+
+        try {
+          const payload: InvalidationPayload = JSON.parse(event.data);
+          const queryKey = [payload.entity];
+          if (payload.date) queryKey.push(payload.date);
+          if (payload.id) queryKey.push(payload.id);
+
+          queryClient.invalidateQueries({ queryKey });
+          console.log(`[SSE] Cache invalidado para a chave:`, queryKey);
+        } catch (err) {
+          console.error('[SSE] Falha ao parsear payload de invalidação:', err);
+        }
+      });
+
+      // 5. Handle connection failures actively
+      eventSource.onerror = (err) => {
+        console.error('[SSE] Conexão interrompida. Fechando instância e solicitando novo ticket...', err);
+        handleReconnection();
+      };
+
+    } catch (error) {
+      console.error('[SSE] Falha de comunicação ou servidores inacessíveis (Offline). Retentando em breve...', error);
+      if (onStatusChange) {
+        onStatusChange('offline');
+      }
+      handleReconnection();
     }
-  });
+  }
 
-  eventSource.onerror = (err) => {
-    console.error('[SSE] Erro na conexão de eventos:', err);
-    // O navegador tentará reconectar automaticamente seguindo a política de retry do SSE
-  };
+  function handleReconnection() {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
 
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+    }
+
+    if (!isClosed) {
+      console.log(`[SSE] Agendando reconexão em ${currentDelay / 1000} segundos (backoff)...`);
+      reconnectTimeout = setTimeout(() => {
+        connect();
+      }, currentDelay);
+
+      // Double delay for the next attempt, capped at MAX_DELAY
+      currentDelay = Math.min(currentDelay * 2, MAX_DELAY);
+    }
+  }
+
+  // Initial connection trigger
+  connect();
+
+  // Return destructor / teardown function
   return () => {
-    eventSource.close();
+    isClosed = true;
+    if (eventSource) {
+      eventSource.close();
+    }
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+    }
   };
 }
 ```
