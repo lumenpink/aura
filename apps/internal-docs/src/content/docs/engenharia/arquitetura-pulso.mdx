@@ -172,11 +172,14 @@ Bibliotecas tradicionais de PDF (como Puppeteer para renderizar HTML, ou `pdfkit
 
 Para possibilitar a geração segura na borda sem intermediários pesados, a Aura Pulso adota a seguinte arquitetura:
 
-1. **Templates Predefinidos em R2/KV**:
+1. **Templates Predefinidos em R2 com Caching de Borda (KV / Cache API)**:
    - Um arquivo PDF base, contendo as bordas estruturadas, marcas d'água regulatórias da clínica, cabeçalho e rodapé é desenhado previamente e salvo no bucket **Cloudflare R2** (`prescriptions-templates/base-receituario.pdf`).
+   - **Veto de Leitura Direta no Caminho Crítico**: Para evitar a latência e custos associados a requisições diretas de leitura ao R2 (Class B Operation) a cada geração de PDF, os bytes do template **não devem** ser consultados síncronamente no R2 a cada requisição. Em vez disso, adota-se uma estratégia de cache de borda de baixíssima latência (sub-10ms):
+     - **Opção A (Estratégia KV)**: Os bytes do PDF base são carregados em um **Cloudflare KV Namespace**, que replica os dados de leitura na borda em um único dígito de milissegundo.
+     - **Opção B (Estratégia Cache API)**: O Worker realiza a leitura inicial no R2 e armazena a resposta em cache local de borda utilizando a **Cache API nativa do Cloudflare Workers (`caches.default`)**, servindo requisições subsequentes a partir da memória de cache local.
 2. **Manipulação Leve via `pdf-lib`**:
    - A biblioteca `pdf-lib` é compilada de forma 100% autônoma em Javascript puro, sem dependências de C++ ou do Node.js.
-   - O Worker lê os bytes do PDF base do R2 e carrega na memória.
+   - O Worker carrega os bytes do PDF base recuperados do cache (KV ou Cache API) na memória.
    - Os dados variáveis (nome do paciente, CRM, medicamentos) são desenhados diretamente nas coordenadas geográficas bidimensionais da página PDF.
 3. **Injeção de Metadados e Link da Assinatura**:
    - O QR Code para consulta regulatória CFM (contendo o link de verificação) é desenhado como imagem JPEG/PNG nos bytes do PDF.
