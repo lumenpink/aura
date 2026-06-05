@@ -13,16 +13,24 @@ Este documento detalha o funcionamento, as justificativas de design e as estrat�
 
 Para manter o ecossistema Aura atualizado em tempo real, optamos por **Server-Sent Events (SSE)** em detrimento de WebSockets. Esta escolha fundamenta-se nos seguintes pilares de arquitetura de software:
 
-### Eficiência Computacional na Borda (Edge Computing)
-O backend da Aura é implantado na borda utilizando **Cloudflare Workers**. 
-- **WebSockets** demandam conexões full-duplex de longa duração mantidas ativas. Em ambientes serverless baseados em isolamento (V8 Isolates), manter conexões WebSockets abertas consome memória de forma contínua, encarece o custo operacional e impõe limites rígidos de escalabilidade horizontal.
-- **SSE** funciona sobre o protocolo HTTP padrão (preferencialmente HTTP/2 ou HTTP/3). A resposta do servidor é transmitida usando `ReadableStream`, permitindo que o Worker envie blocos de dados de forma assíncrona e encerre a computação ativa assim que não houver eventos, mantendo a conexão aberta na camada de infraestrutura da rede de forma extremamente otimizada.
+### Simplicidade e Portabilidade Local (LAN)
+- **Simplicidade do HTTP**: O SSE funciona sobre o protocolo HTTP convencional. Isso o torna extremamente fácil de implementar no backend (usando `ReadableStream` nativos) e no frontend (usando a API padronizada `EventSource`), sem a necessidade de gerenciar handshakes complexos ou bibliotecas adicionais.
+- **Execução em LAN**: A simplicidade do SSE permite que o serviço seja facilmente implantado e executado em uma rede local (LAN) ou servidores on-premise na clínica, sem requerer proxies reversos complexos ou gateways de WebSockets que dificultam configurações de intranet.
 
 ### Modelo Unidirecional de Atualizações
 O fluxo de reatividade da Aura é puramente voltado para a **invalidação de caches de consulta** no cliente (invalidação reativa). 
 - O fluxo de dados do **Cliente para o Servidor** é integralmente atendido por chamadas RPC tipadas via **Hono RPC Client** utilizando métodos tradicionais (POST, PUT, DELETE).
 - O fluxo de dados do **Servidor para o Cliente** necessita apenas notificar que um recurso foi alterado no banco de dados SQLite (Cloudflare D1).
 Dado que o canal de tempo real é estritamente unidirecional, o uso de WebSockets (que é bidirecional) introduziria complexidade desnecessária na gerência de estado e no controle de concorrência.
+
+### Comportamento Computacional e Otimização de Conexões
+- **Modelo de Faturamento**: No Cloudflare Workers Paid, a cobrança é baseada em requisições e tempo ativo de CPU. Como a conexão SSE fica ociosa (idle) na maior parte do tempo aguardando eventos, ela não consome ciclos de CPU e não gera custos de processamento contínuo.
+- **Multiplexação por Navegador (SharedWorker)**: Embora uma conexão SSE aberta mantenha o contexto da requisição no Worker ativo (segurando o isolado V8 em memória), evitamos o esgotamento de conexões concorrentes no frontend encapsulando o `EventSource` dentro de um **SharedWorker**. Dessa forma, todas as abas abertas no mesmo navegador compartilham a **mesma e única conexão SSE**, distribuindo os eventos localmente via `BroadcastChannel`. Isso reduz o número de conexões ativas na borda na ordem de 5x a 10x.
+
+### Evolução Futura: Durable Objects (DO) e WebSockets
+Conforme a aplicação crescer e o número de clínicas/dispositivos simultâneos escalar para milhares de conexões globais concorrentes, a arquitetura poderá migrar para **Cloudflare Durable Objects utilizando a WebSocket Hibernation API**. 
+- O uso de Durable Objects com hibernação permite que a Cloudflare gerencie as conexões WebSocket na borda da rede e remova os objetos/isolados da memória quando estão ociosos.
+- Isso elimina completamente o consumo de memória persistente e o faturamento de duração de execução para conexões inativas, oferecendo a solução de escala horizontal definitiva para o ecossistema Aura.
 
 ---
 
