@@ -9,7 +9,8 @@
   "dependencies": {
     "hono": "^4.12.23",
     "@aura/shared": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260605.1",
