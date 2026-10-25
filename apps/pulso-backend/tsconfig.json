@@ -5,5 +5,5 @@
     "typeRoots": ["../../node_modules"]
   },
   "include": ["src"],
-  "exclude": []
+  "exclude": ["**/*.test.ts"]
 }

@@ -45,8 +45,16 @@ app.use('*', async (c, next) => {
 });
 
 // Setup Dedicated Sub-routers
+type ApiVariables = {
+  tenantId: string;
+  doctorCpf: string;
+  doctorName: string;
+  doctorCrm: string;
+  doctorCrmUf: string;
+};
+
 const authRouter = new Hono<{ Bindings: Bindings }>();
-const apiRouter = new Hono<{ Bindings: Bindings }>();
+const apiRouter = new Hono<{ Bindings: Bindings; Variables: ApiVariables }>();
 
 // Auth Routing Constraints
 authRouter.use('*', async (c, next) => {
@@ -174,7 +182,7 @@ apiRouter.post('/prescriptions', async (c) => {
       .orderBy(desc(prescriptionsTable.createdAt))
       .limit(1);
 
-    if (lastRecord && lastRecord.length > 0) {
+    if (lastRecord && lastRecord.length > 0 && lastRecord[0]) {
       previousHash = lastRecord[0].currentHash;
     }
   }
@@ -405,9 +413,12 @@ apiRouter.get('/prescriptions/:id/pdf', async (c) => {
   // Generate finalized PDF bytes
   const pdfBytes = await generatePrescriptionPdf(templateBytes, data);
 
-  c.header('Content-Type', 'application/pdf');
-  c.header('Content-Disposition', `inline; filename="prescricao-${id}.pdf"`);
-  return c.body(pdfBytes);
+  return new Response(pdfBytes, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="prescricao-${id}.pdf"`
+    }
+  });
 });
 
 // 6. POST /api/prescriptions/:id/dispense - M2M Dispensation Log

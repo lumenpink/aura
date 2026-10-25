@@ -161,7 +161,9 @@ export async function generatePrescriptionPdf(
       if (pdfDoc.getPageCount() > 0) {
         const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [0]);
         pdfDoc.addPage(copiedPage);
-        currentPage = copiedPage;
+        if (copiedPage) {
+          currentPage = copiedPage;
+        }
       } else {
         currentPage = pdfDoc.addPage([595.27, 841.89]);
       }

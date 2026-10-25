@@ -39,6 +39,7 @@
   },
   "exclude": [
     "apps",
-    "packages"
+    "packages",
+    "test"
   ]
 }
