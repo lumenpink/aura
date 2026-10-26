@@ -535,9 +535,16 @@ async function generateProjectPdfs(projectName: string, projectDir: string) {
 
       const url = `http://localhost:${activePort}/consolidated-book.html`;
 
+      // Check if google-chrome, chromium or chromium-browser exists before running
+      const chromeBin = Bun.which("google-chrome") || Bun.which("chromium") || Bun.which("chromium-browser");
+      if (!chromeBin) {
+        console.warn(`[WARN] Chrome/Chromium executable not found in PATH. Skipping headless PDF rendering for ${projectName}.`);
+        return;
+      }
+
       // Print consolidated PDF with dynamic continuous page numbers, headers, and footers
       await runCmd([
-        "google-chrome",
+        chromeBin,
         "--headless",
         "--disable-gpu",
         "--no-sandbox",

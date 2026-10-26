@@ -2,8 +2,8 @@
   {
     "name": "Continuous Integration / Lint, Test & Build (push)",
     "status": "failure",
-    "description": "Failing after 1m34s",
-    "target_url": "/lumen/aura/actions/runs/2/jobs/0",
-    "updated_at": "2026-10-25T13:22:11-03:00"
+    "description": "Failing after 4m44s",
+    "target_url": "/lumen/aura/actions/runs/3/jobs/0",
+    "updated_at": "2026-10-25T18:35:23-03:00"
   }
 ]
