@@ -1,0 +1,13 @@
+{
+  "abstract": "Projeto aura governado conforme a norma técnica GOST v3.0.",
+  "schema_version": 1,
+  "site_type": "doc",
+  "slug": "aura",
+  "summary": "Módulo aura do ecossistema Gosplan",
+  "tagline": "Repositório aura",
+  "tags": [
+    "gost",
+    "tulipa"
+  ],
+  "title": "aura"
+}

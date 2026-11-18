@@ -1,0 +1,4 @@
+# Manifesto declarativo de entrega contínua (CD)
+[sites]
+target = "cloudflare-pages"
+dir = "site"
