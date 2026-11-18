@@ -1,6 +1,6 @@
 {
   "name": "@aura/shared",
-  "version": "0.1.0-dev.88+20261118.a7086a3",
+  "version": "0.1.0-dev.89+20261118.b8d193a",
   "private": true,
   "main": "src/index.ts",
   "types": "src/index.ts",
