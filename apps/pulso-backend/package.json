@@ -1,6 +1,6 @@
 {
   "name": "@aura/pulso-backend",
-  "version": "0.1.0-dev.90+20261118.ba7208c",
+  "version": "0.1.0-dev.91+20261118.b2fb780",
   "private": true,
   "scripts": {
     "dev": "npx wrangler dev src/index.ts",
